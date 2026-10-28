@@ -48,6 +48,12 @@ class EmbeddingConfiguration:
             dimensions=user.preferences.get("embedding_dimensions", settings.embedding_dimensions),
         )
 
+    def with_draft(self, draft: dict):
+        endpoint = draft.get("embedding_base_url", self.base_url).strip().rstrip("/")
+        key = draft.get("embedding_api_key", self.api_key if endpoint == self.base_url else "")
+        return EmbeddingConfiguration(model=draft.get("embedding_model", self.model), base_url=endpoint,
+                                      api_key=key, dimensions=draft.get("embedding_dimensions", self.dimensions))
+
     @property
     def configured(self) -> bool:
         return bool(self.api_key and self.base_url)

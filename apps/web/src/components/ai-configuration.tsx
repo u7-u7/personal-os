@@ -112,7 +112,7 @@ export function AISetupNotice({ full = false }: { full?: boolean }) {
       {full && (
         <p className="ai-setup-footnote">
           {t(
-            "Save each step when ready, then test each saved connection to verify it. Saving embedding settings does not enable Hy-Memory indexing.",
+            "Test the current fields, then save to apply them. Saving embedding settings does not enable Hy-Memory indexing.",
           )}
         </p>
       )}

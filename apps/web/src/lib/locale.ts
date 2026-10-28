@@ -79,7 +79,20 @@ export function translatedError(locale: Locale, message: string): string {
   const provider = message.match(
     /^(Chat|Embedding) provider rejected the request \(HTTP (\d+)\); (.+)$/,
   );
-  if (provider && locale === "zh-CN")
-    return `${provider[1] === "Chat" ? "聊天" : "向量"}服务拒绝了请求（HTTP ${provider[2]}），请检查模型、工作空间权限和密钥`;
+  if (provider && locale === "zh-CN") {
+    const reason: Record<string, string> = {
+      "401": "认证失败，请检查 API 密钥",
+      "402": "账户余额不足，请充值后重试",
+      "403": "访问被拒绝，请检查模型、工作空间和密钥权限",
+      "404": "接口或模型不存在，请检查地址与模型 ID",
+      "429": "请求频率受限，请稍后重试",
+    };
+    return `${provider[1] === "Chat" ? "聊天" : "向量"}服务拒绝了请求（HTTP ${provider[2]}），${reason[provider[2]] || "请检查模型、工作空间权限和密钥"}`;
+  }
+  const rejected = message.match(
+    /^Provider rejected the request \(HTTP (\d+)\)$/,
+  );
+  if (rejected && locale === "zh-CN")
+    return `供应商拒绝了请求（HTTP ${rejected[1]}）`;
   return translate(locale, message);
 }
