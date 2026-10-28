@@ -1,5 +1,13 @@
 # PersonalOS verification report
 
+## Real Worker conversation history · 2026-10-29
+
+A real one-time DeepSeek automation succeeded with a 23-character response and attempts=1, but its returned chat session contained **zero messages**. The candidate now saves the user prompt before inference and the assistant response only after a complete stream. It preserves the existing account lease, tool audit and Worker execution contract; no table, migration or test case was added.
+
+New live acceptance on the candidate: a real independent Worker and the saved DeepSeek connection produced two readable messages matching the execution result. After Worker restart, the same occurrence still had one execution/one attempt and both messages. An interactive SSE continuation emitted 9 real token chunks, recalled the original marker and persisted four messages total. A separate negative-auth account reached the real provider with an intentionally invalid key; upstream 401 produced a failed run with one user message and no assistant message. The browser rendered the successful automation's input and output. No real user credential was copied into the negative account.
+
+Existing PostgreSQL suite **51 passed (6.32s)**; existing complete browser E2E **1 passed (18.4s)**; Ruff passed. This is a narrow, real read-only Agent/Worker acceptance, not tool selection, memory quality, Google OAuth, Qwen embeddings or Hy/Jev acceptance. [Full evidence and boundaries](progress/2026-10-29-automation-history.md).
+
 ## Qwen saved credentials and live quota rejection · 2026-10-29
 
 The user-supplied embedding key is now encrypted in the current 3000 development account. Saved configuration version 4 uses `qwen3.7-text-embedding`, 1024 dimensions and the supplied public Beijing endpoint. Settings readback shows the key-configured flag without returning the key. Earlier missing-key evidence below predates this configuration.

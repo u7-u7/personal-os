@@ -6,10 +6,10 @@
 |---|---|---|---|---|
 | TASK-01 | .sdd/personal-os、AGENTS.md、Git | PLAN-01/DES-06/REQ-K | 文档齐全，独立 feature 分支 | 已完成：独立仓库、设计和feature分支 |
 | TASK-02 | apps/api/personalos/{main,models,services,auth} | PLAN-01/03/05、DES-02、REQ-C/D/E/H/I | 注册、隔离、CRUD/CAS、真实 DB 集成 Pytest | 本地API/安全验证通过；第三方授权待验收 |
-| TASK-03 | apps/api/personalos/agent.py、memory service | PLAN-02/DES-01、REQ-A/B | 真 SSE、历史、持久 graph、确认记忆 | 真实框架/PG协议测试通过；外部模型待授权 |
+| TASK-03 | apps/api/personalos/agent.py、memory service | PLAN-02/DES-01、REQ-A/B | 真 SSE、历史、持久 graph、确认记忆 | 已真实DeepSeek验证只读Worker→聊天续问与持久上下文；工具选择/记忆/简报质量仍待验收 |
 | TASK-04 | apps/api/personalos/integrations | PLAN-02/04/DES-01/04、REQ-B/G/J | 官方 SDK 核查，provider 可替代，外部授权测试 | SDK核查与provider契约通过；Hy数据面/Jev服务待授权 |
 | TASK-05 | apps/web | PLAN-01/03/05/DES-05、REQ-L | 9 路由真实 API、响应式/明暗/状态、Playwright | 九页代码、生产build和真实API浏览器流程通过 |
-| TASK-06 | apps/api/personalos/worker.py | PLAN-04/DES-03、REQ-F/E | 独立进程、claim/租约/失败恢复测试 | 6项PG事务测试及独立进程/容器Worker验证通过 |
+| TASK-06 | apps/api/personalos/worker.py | PLAN-04/DES-03、REQ-F/E | 独立进程、claim/租约/失败恢复测试 | 6项PG事务测试及既有进程/容器检查；新增真实DeepSeek Worker历史、重启与失败保留输入验收 |
 | TASK-07 | compose.yaml、Dockerfile、CI、tests | PLAN-06/DES-06/NFR | 一键运行、后端安全测试与 UI 实测 | API/Web镜像、全Compose浏览器及PR #1–3远程CI已通过；授权集成验收仍待完成 |
 | TASK-08 | docs、README、截图、GitHub PR | PLAN-07/DES-06/REQ-K | 可重复启动、课程、完整验收矩阵和 PR 链接 | 文档/截图/报告已生成，PR #1–3已合并；完整外部验收与候选发布门槛保留 |
 
@@ -33,6 +33,17 @@
 - [x] 兼容 SDK 读取真实模型列表；保留手动输入，主模型与路由模型可选择。
 - [x] 官方 DeepSeek 余额查询，按币种显示总余额/赠金/充值，不支持的供应商明确提示。
 - [x] 用户已保存 DeepSeek 配置：真实模型发现、余额、最小非流式推理均通过；错误 Key/模型、过期版本与换端点缺 Key 均真实验证。
-- [ ] Qwen 实际向量返回仍待北京工作空间地址和授权；此项不受 DeepSeek 检测成功替代。
+- [ ] Qwen Key与官方北京公共地址已保存，前序真实请求被百炼FreeTierOnly额度限制阻塞；有效向量仍待云端额度处理，此项不受DeepSeek成功替代。
 
 以上不是完整 Agent 流式/工具/记忆提取/简报质量验收；原有外部验收门槛全部保留。
+
+## 2026-10-29 Worker 历史验收与后续缺陷
+
+- [x] 真实复现自动化执行成功但Message历史为空，补齐调用前的输入、完整成功后的回复持久化。
+- [x] 真实独立Worker+DeepSeek验证：成功保留两条消息；重启后仍仅一个执行、attempts=1；交互续问返回原标记并保留四条消息。
+- [x] 独立负例账号以明确无效Key请求真实供应商，401后Worker失败，仅保留输入，不生成助手成功回复。
+- [ ] 后续独立修复：本地日历先取最近100条再筛月份，可能漏显较早创建但仍有效的日程；需按时间窗和现有索引复现与修复。
+- [ ] 后续独立修复：Google列表读取忽略nextPageToken，可能漏显后续页和漏检查冲突；真实OAuth仍待配置。
+- [ ] 后续独立审计：OAuth完成/token刷新跨await与账户擦除的生命周期fence；目前为代码审阅风险，未完成并发复现。
+
+本轮按heartbeat授权创建feature PR，不合并main。详细证据见 `docs/progress/2026-10-29-automation-history.md`。
