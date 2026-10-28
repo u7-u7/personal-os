@@ -143,6 +143,11 @@ class EmbeddingService:
         except (TimeoutError, APITimeoutError, APIConnectionError) as exc:
             raise HTTPException(502, "Embedding provider timed out or could not be reached; no vectors were saved") from exc
         except APIStatusError as exc:
+            # Model Studio reports a free-tier billing restriction as HTTP 400,
+            # not a malformed embedding request. Expose only this known code;
+            # provider response text can contain sensitive request details.
+            if "AllocationQuota.FreeTierOnly" in (exc.code, exc.type):
+                raise HTTPException(502, "Model Studio free quota is exhausted and free-tier-only mode is enabled. Check model quota and billing settings in the Model Studio console.") from exc
             status = 429 if exc.status_code == 429 else 502
             raise HTTPException(status, f"Embedding provider rejected the request (HTTP {exc.status_code}); check workspace access and credentials") from exc
         except (APIResponseValidationError, ValueError) as exc:

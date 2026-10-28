@@ -1,5 +1,13 @@
 # PersonalOS verification report
 
+## Qwen saved credentials and live quota rejection · 2026-10-29
+
+The user-supplied embedding key is now encrypted in the current 3000 development account. Saved configuration version 4 uses `qwen3.7-text-embedding`, 1024 dimensions and the supplied public Beijing endpoint. Settings readback shows the key-configured flag without returning the key. Earlier missing-key evidence below predates this configuration.
+
+Real saved-configuration probes reached Model Studio and failed with upstream HTTP 400, code `AllocationQuota.FreeTierOnly`: the free quota is exhausted and free-tier-only mode prevents further calls. The application now recognizes that exact structured SDK error and shows fixed English/Chinese guidance rather than a generic HTTP 400 diagnostic. Actual browser acceptance verified the new message and an empty password field. No valid vectors, indexing or semantic retrieval are claimed. Cloud quota/billing changes remain a user action; no automatic paid-mode changes or model substitutions were made. [Evidence and remaining gate](progress/2026-10-29-qwen-authorization.md).
+
+Existing backend suite **51 passed (6.20s)**; Ruff, TypeScript and ESLint passed. No tests were added or changed. The user explicitly authorized this corrective change directly on main.
+
 ## Beijing embedding endpoint compatibility · 2026-10-29
 
 The official legacy Beijing endpoint `https://dashscope.aliyuncs.com/compatible-mode/v1` was incorrectly rejected by workspace-only validation. It is now accepted alongside valid Beijing workspace hosts, with existing URL/key/index boundaries retained. UI copy and placeholders reflect both choices. Official documentation recommends workspace migration and explicitly retains the existing endpoint.

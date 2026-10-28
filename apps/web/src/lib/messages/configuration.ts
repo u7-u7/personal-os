@@ -1,4 +1,6 @@
 export const configurationMessages: Record<string, string> = {
+  "Model Studio free quota is exhausted and free-tier-only mode is enabled. Check model quota and billing settings in the Model Studio console.":
+    "百炼免费额度已用尽，且开启了“仅使用免费额度”。请在百炼控制台检查模型额度和计费设置；如需按量付费调用，请确认费用后再处理充值或关闭该限制。",
   "Qwen3.7 Embedding turns text into memory retrieval vectors. Choose the standard or Flash model with an official Beijing endpoint and a separate embedding API key. Chat remains available without embeddings.":
     "Qwen3.7 Embedding 将文字转换为记忆检索向量，可选择标准版或 Flash，使用官方北京接口与独立 API 密钥。尚未配置不会阻止聊天。",
   "Choose qwen3.7-text-embedding or qwen3.7-text-embedding-flash":
