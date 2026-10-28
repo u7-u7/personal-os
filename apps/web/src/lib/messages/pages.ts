@@ -1,5 +1,12 @@
 /** Chinese translations for fixed workspace UI; user-authored content stays unchanged. */
 export const pageMessages: Record<string, string> = {
+  "Settings changed elsewhere. Your draft is kept; reload the latest settings before saving or testing.":
+    "设置已在其他页面更新。当前草稿已保留，请读取最新设置后再保存或检测。",
+  "Reload latest settings": "读取最新设置",
+  "Reload the latest settings and discard this unsaved draft?":
+    "读取最新设置并放弃当前未保存的草稿？",
+  "The connection ended before completion. Your conversation is kept; check its history before retrying.":
+    "连接在生成完成前中断。对话已保留，请检查历史记录后再重试。",
   "Something went wrong": "操作失败，请重试",
   "Try again": "重试",
   Loading: "正在加载",

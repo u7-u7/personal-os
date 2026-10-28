@@ -628,31 +628,35 @@ async def chat(payload: ChatInput, user: Viewer, db: DB):
     assert_account_writable(db, user.id)
     db.add(Message(owner_id=user.id, session_id=session.id, role="user", content=payload.message))
     db.commit()
+    session_id = session.id
 
     async def events():
         pieces = []
         try:
-            async for event in stream_agent(db, user, payload.message, session.id, payload.model):
+            async for event in stream_agent(db, user, payload.message, session_id, payload.model):
                 if event["type"] == "token":
                     pieces.append(event["content"])
                 yield "data: " + json.dumps(event, ensure_ascii=False, default=str) + "\n\n"
-            db.add(Message(owner_id=user.id, session_id=session.id, role="assistant", content="".join(pieces)))
+            db.add(Message(owner_id=user.id, session_id=session_id, role="assistant", content="".join(pieces)))
             db.commit()
-            yield "data: " + json.dumps({"type": "done", "session_id": session.id}) + "\n\n"
+            yield "data: " + json.dumps({"type": "done", "session_id": session_id}) + "\n\n"
         except Exception as exc:
             db.rollback()
-            logger.exception("chat_failed session_id=%s error_type=%s", session.id, type(exc).__name__)
-            audit(db, user.id, "chat.failed", session.id, {"error_type": type(exc).__name__}, status="failed")
+            logger.exception("chat_failed session_id=%s error_type=%s", session_id, type(exc).__name__)
+            audit(db, user.id, "chat.failed", session_id, {"error_type": type(exc).__name__}, status="failed")
             db.commit()
-            yield "data: " + json.dumps({"type": "error", "content": "Model or tool execution failed. Check Activity and model settings", "error_type": type(exc).__name__}) + "\n\n"
+            yield "data: " + json.dumps({"type": "error", "content": "Model or tool execution failed. Check Activity and model settings", "error_type": type(exc).__name__, "session_id": session_id}) + "\n\n"
     async def leased_events():
+        # Publish the persisted session before model work so failure or browser
+        # cancellation can recover the same conversation without duplicating it.
+        yield "data: " + json.dumps({"type": "session", "session_id": session_id}) + "\n\n"
         try:
             with account_lease(db, user.id):
                 async for event in events():
                     yield event
         except HTTPException as exc:
-            yield "data: " + json.dumps({"type": "error", "content": exc.detail}) + "\n\n"
-    return StreamingResponse(leased_events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+            yield "data: " + json.dumps({"type": "error", "content": exc.detail, "session_id": session_id}) + "\n\n"
+    return StreamingResponse(leased_events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Session-ID": session_id})
 
 
 @app.patch("/api/calendar/google/events/{event_id}", status_code=202)

@@ -1,5 +1,17 @@
 # PersonalOS verification report · 2026-10-28
 
+## Configuration and Agent reliability follow-up
+
+Fixed stale settings drafts rebasing onto a newer server version; early/persisted chat session recovery; same-origin tab identity/cache synchronization; malformed service URL errors; redirect following in actual Agent calls; and total connection-probe deadlines. No table, migration or test case file was added. The full original feature plan and external authorization gates remain in place.
+
+- Existing backend suite: **51 passed (6.31s)**. Existing real-runtime browser E2E: **1 passed (18.5s)**. Web TypeScript, ESLint, isolated production build and backend Ruff passed.
+- An isolated loopback QA Web/API pair used separate browser cookies and dedicated QA accounts. Its administrator model endpoint was explicitly a **failure-only local HTTP fixture**, with no genuine provider credentials. Two real UI sends both failed, retained both messages in one saved conversation, and refreshed the history list. The fixture recorded two chat requests and zero redirect-target requests. This proves local failure handling and redirect refusal, not a successful model integration.
+- A continuous slow-response fixture caused the real saved-chat probe to return 502 after **20.01 seconds**. A settings write immediately afterwards returned 200. Three malformed URL/port/IPv6 requests returned 422. No external service was called.
+- Two actual QA tabs reproduced a stale draft: the newer tab saved successfully; the old draft received **409**, retained its local value and disabled save/key removal/probes. Cancelling the reload prompt kept the draft; a full page reload then read the newer server value. The affirmative native-confirm branch was code-reviewed, not exercised through the browser tool.
+- Same-origin QA tab logout removed the old workspace in the other tab; registering a second QA account replaced both the account name and its model configuration there. The original user's localhost cookies, account and secrets were untouched. The no-broadcast focus fallback was reviewed; the broadcast path was exercised in the real browser.
+- Temporary QA tabs and all three local fixture/QA services were stopped after acceptance. Screenshot: `docs/evidence/settings-version-conflict.png`. Existing evidence images and generated Next.js type-path changes were restored.
+- Runtime DNS validation and redirect refusal do not pin resolved addresses; deployment egress controls remain required against DNS rebinding. Real chat/tool/embedding quality and Google/Hy/Jev/MCP acceptance still require the authorized external services described below.
+
 ## System language and eight-character passwords · 2026-10-28
 
 The interface now defaults to `system` and supports Simplified Chinese/English. The server resolves the browser's `Accept-Language` plus a validated preference cookie; the client observes `navigator.languages`, `languagechange` and explicit choices. Login and Settings share a persistent language selector. Explicit dictionaries cover the nine pages, configuration screens, accessibility labels, statuses, prompts, known errors and locale-aware dates. User content, model output, model IDs, API enum values and tool arguments remain original. No table/migration or external translation service was added.

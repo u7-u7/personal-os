@@ -30,6 +30,8 @@ flowchart TB
 - `automations` stores a schedule. `executions` stores an occurrence, a unique run key, lease and claim token. Advancing the schedule and materializing the occurrence happen in one transaction.
 - `messages` holds the visible transcript. Official LangGraph PostgreSQL checkpointer tables hold resumable graph state. Consented memory is a separate fact source and is never inferred to be approved merely because it appeared in a chat.
 - Model and OAuth secrets are encrypted on the server. Responses and exports exclude credentials. HTTPS, encrypted backups and access control remain deployment responsibilities.
+- Chat, automation and briefings use owned HTTP clients with redirects disabled. User-selected model endpoints are validated again at invocation; administrator-configured local endpoints retain explicit trust. DNS lookup is bounded and connection probes have total deadlines. This does not pin resolved addresses: production still needs outbound network controls against DNS rebinding.
+- A settings draft retains its reviewed version until successful save or explicit reload. Same-origin authentication changes invalidate other tabs' cached identities and records before showing the new workspace; independent local deployment databases remain separate.
 
 ## Scheduling and failure semantics
 

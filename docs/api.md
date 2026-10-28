@@ -24,13 +24,13 @@ Registration/login passwords use the same 8–256 character constraint. Existing
 | `GET /api/export` | Complete tenant export from a repeatable-read snapshot; credentials omitted |
 | `GET/POST /api/briefings` | Briefing history and generation from actual data |
 | `GET /api/chat/sessions`; `GET .../{id}/messages` | Account-owned conversations and persisted visible messages |
-| `POST /api/chat/stream` | `{message,session_id?,model?}`; SSE `status/token/tool/error/done` |
+| `POST /api/chat/stream` | `{message,session_id?,model?}`; SSE `session/status/token/tool/error/done` |
 
 Lists return JSON arrays. Resource fields include `id`, `created_at`, `updated_at`, `version`, `deleted_at` and `extra`; domain fields vary. PATCH bodies include a positive `version`. DELETE requests include `?version=N`; approval responses use HTTP 202 and do not mean the deletion has executed. Approval resolution uses `{decision:"approved"|"rejected",version:N}`. A stale version returns HTTP 409; refresh and review the new state.
 
 Task status: `todo`, `in_progress`, `done`, `cancelled`. Memory state: `pending`, `confirmed`, `superseded`, `deletion_pending`, `deleted`. Schedule state: `active`, `paused`, `cancelled`, `completed`. Execution state: `queued`, `running`, `succeeded`, `failed`, `cancelled`, `outcome_unknown`. Unknown outcome must be reconciled before retry.
 
-SSE is newline-delimited event framing (`data: {JSON}\n\n`). A token event carries `content`; done carries `session_id`. Errors are explicit events after streaming starts, or regular non-2xx JSON if preconditions fail. Handle an error event as failure even though the HTTP stream began with 200.
+SSE is newline-delimited event framing (`data: {JSON}\n\n`). After persistence, the response includes `X-Session-ID` and first emits `{type:"session",session_id}` before model work. Pin this ID immediately so failure/cancellation can recover the same conversation. A token event carries `content`; done and error events carry `session_id`. Errors are explicit events after streaming starts, or regular non-2xx JSON if preconditions fail. Handle an error event or EOF without `done` as failure even though the HTTP stream began with 200, and refresh the session list after failure/cancellation.
 
 An unavailable model or missing server OAuth configuration returns 503. Provider/network failures do not become successful empty data. All event timestamps include timezones. Tool parameters are validated by Pydantic and server-owned allowlists; neither a model selection nor a decision score authorizes an operation.
 

@@ -41,7 +41,14 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { api, inputDate, type RecordItem, type User } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  inputDate,
+  type RecordItem,
+  type Settings,
+  type User,
+} from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { useI18n, LanguageSelector } from "@/components/i18n-provider";
 import { EmbeddingSettings } from "@/components/embedding-settings";
@@ -2074,16 +2081,97 @@ export function ActivityPage() {
 export function SettingsPage({ user }: { user: User }) {
   const { t } = useI18n();
   const query = useAIConfiguration();
+  return (
+    <>
+      <PageHeader
+        eyebrow={t("YOUR WORKSPACE, YOUR WAY")}
+        title={t("Make it feel like you.")}
+        subtitle={t("Your model, your privacy, your preferences.")}
+      />
+      <AISetupNotice full />
+      {query.data ? (
+        <SettingsEditor
+          key={user.id}
+          user={user}
+          initialSettings={query.data}
+        />
+      ) : query.isPending ? (
+        <Loading />
+      ) : null}
+    </>
+  );
+}
+
+function SettingsEditor({
+  user,
+  initialSettings,
+}: {
+  user: User;
+  initialSettings: Settings;
+}) {
+  const { t } = useI18n();
+  const query = useAIConfiguration();
   const action = useAction();
+  // A background refresh may discover a newer version but must not silently
+  // rebase a draft; every write uses the version the user actually reviewed.
+  const [snapshot, setSnapshot] = useState(initialSettings);
+  const [formRevision, setFormRevision] = useState(0);
   const [saved, setSaved] = useState(false);
   const [embeddingTesting, setEmbeddingTesting] = useState(false);
   const [chatTesting, setChatTesting] = useState(false);
-  const settingsForm = useRef<HTMLFormElement>(null);
+  const [reloading, setReloading] = useState(false);
+  const remoteChanged = !!query.data && query.data.version !== snapshot.version;
+  const blocked = action.pending || reloading || remoteChanged || !!query.error;
+
+  async function reloadSettings() {
+    if (
+      !confirm(t("Reload the latest settings and discard this unsaved draft?"))
+    )
+      return;
+    setReloading(true);
+    try {
+      const result = await query.refetch();
+      if (!result.error && result.data) {
+        setSnapshot(result.data);
+        setFormRevision((revision) => revision + 1);
+        setSaved(false);
+        action.clear();
+      }
+    } finally {
+      setReloading(false);
+    }
+  }
+  async function persistSettings(
+    changes: Record<string, unknown>,
+    resetForm = false,
+  ) {
+    if (blocked || embeddingTesting || chatTesting) return false;
+    let updated: Settings | undefined;
+    let conflicted = false;
+    const ok = await action.run(async () => {
+      try {
+        updated = await api<Settings>("/settings", {
+          method: "PATCH",
+          body: JSON.stringify({ ...changes, version: snapshot.version }),
+        });
+      } catch (error) {
+        conflicted = error instanceof ApiError && error.status === 409;
+        throw error;
+      }
+    });
+    // A conflict can precede a focus refresh. Fetch the remote version without
+    // rebasing or discarding the draft the user actually reviewed.
+    if (conflicted) await query.refetch();
+    if (ok && updated) {
+      setSnapshot(updated);
+      if (resetForm) setFormRevision((revision) => revision + 1);
+    }
+    return ok;
+  }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (embeddingTesting || chatTesting || action.pending) return;
-    const formElement = event.currentTarget;
-    const data = new FormData(formElement);
+    if (blocked || embeddingTesting || chatTesting) return;
+    const data = new FormData(event.currentTarget);
     setSaved(false);
     const payload: Record<string, unknown> = {
       name: data.get("name"),
@@ -2093,43 +2181,42 @@ export function SettingsPage({ user }: { user: User }) {
       memory_enabled: data.get("memory_enabled") === "on",
       embedding_model: data.get("embedding_model"),
       embedding_dimensions: Number(data.get("embedding_dimensions") || 1024),
-      version: query.data?.version,
     };
     for (const field of ["base_url", "embedding_base_url"] as const) {
       const value = String(data.get(field) || "").trim();
-      // Unchanged providers need no new network validation when saving preferences.
-      if (value !== String(query.data?.[field] || "").trim())
+      if (value !== String(snapshot[field] || "").trim())
         payload[field] = value;
     }
     if (data.get("api_key")) payload.api_key = data.get("api_key");
     if (data.get("embedding_api_key"))
       payload.embedding_api_key = data.get("embedding_api_key");
-    for (const field of ["fast_model", "reasoning_model"]) {
-      const value = String(data.get(field) || "").trim();
-      payload[field] = value;
-    }
-    const ok = await action.run(() =>
-      api("/settings", { method: "PATCH", body: JSON.stringify(payload) }),
-    );
-    if (ok) {
-      setSaved(true);
-      const keyInput = formElement.elements.namedItem("api_key");
-      if (keyInput instanceof HTMLInputElement) keyInput.value = "";
-      const embeddingKeyInput =
-        formElement.elements.namedItem("embedding_api_key");
-      if (embeddingKeyInput instanceof HTMLInputElement)
-        embeddingKeyInput.value = "";
-    }
+    for (const field of ["fast_model", "reasoning_model"])
+      payload[field] = String(data.get(field) || "").trim();
+    if (await persistSettings(payload, true)) setSaved(true);
   }
   return (
     <>
-      <PageHeader
-        eyebrow={t("YOUR WORKSPACE, YOUR WAY")}
-        title={t("Make it feel like you.")}
-        subtitle={t("Your model, your privacy, your preferences.")}
-      />
-      <AISetupNotice full />
       <ErrorText text={action.error} />
+      {remoteChanged && (
+        <div className="error-banner" role="alert">
+          <span>
+            {t(
+              "Settings changed elsewhere. Your draft is kept; reload the latest settings before saving or testing.",
+            )}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={
+              action.pending || reloading || embeddingTesting || chatTesting
+            }
+            onClick={() => void reloadSettings()}
+          >
+            <RefreshCw size={14} /> {t("Reload latest settings")}
+          </Button>
+        </div>
+      )}
       {saved && (
         <div className="success-banner" role="status">
           <CheckCircle2 size={17} />{" "}
@@ -2138,233 +2225,213 @@ export function SettingsPage({ user }: { user: User }) {
           )}{" "}
         </div>
       )}
-      {query.isPending ? (
-        <Loading />
-      ) : (
-        !query.error &&
-        query.data && (
-          <div className="settings-layout">
-            <form
-              className="settings-form"
-              ref={settingsForm}
-              onSubmit={(e) => {
-                void submit(e);
+      <div className="settings-layout">
+        <form
+          key={formRevision}
+          className="settings-form"
+          onChange={() => setSaved(false)}
+          onSubmit={(e) => {
+            void submit(e);
+          }}
+        >
+          <fieldset
+            className="embedding-fields"
+            disabled={action.pending || reloading}
+          >
+            <ChatSettings
+              settings={snapshot}
+              pending={blocked || embeddingTesting}
+              onChange={() => setSaved(false)}
+              onTestPendingChange={setChatTesting}
+              onRemoveKey={async () => {
+                setSaved(false);
+                return persistSettings({ api_key: "" });
               }}
-            >
-              <ChatSettings
-                settings={query.data}
-                pending={action.pending || embeddingTesting}
-                onChange={() => setSaved(false)}
-                onTestPendingChange={setChatTesting}
-                onRemoveKey={async () => {
-                  setSaved(false);
-                  return action.run(() =>
-                    api("/settings", {
-                      method: "PATCH",
-                      body: JSON.stringify({
-                        api_key: "",
-                        version: query.data?.version,
-                      }),
-                    }),
-                  );
-                }}
-              />
-              <EmbeddingSettings
-                settings={query.data}
-                pending={action.pending || chatTesting}
-                onTestPendingChange={setEmbeddingTesting}
-                onChange={() => setSaved(false)}
-                onRemoveKey={async () => {
-                  setSaved(false);
-                  return action.run(() =>
-                    api("/settings", {
-                      method: "PATCH",
-                      body: JSON.stringify({
-                        embedding_api_key: "",
-                        version: query.data?.version,
-                      }),
-                    }),
-                  );
-                }}
-              />
-              <section className="panel settings-section">
-                <div className="settings-section-heading">
-                  <span className="small-icon">
-                    <Brain size={21} />
-                  </span>
-                  <div>
-                    <h2>{t("Memory & preferences")}</h2>
-                    <p>
-                      {t(
-                        "Choose how your workspace remembers and organizes your day.",
-                      )}{" "}
-                    </p>
-                  </div>
-                </div>
-                <LanguageSelector />
-                <div className="toggle-field">
-                  <div>
-                    <strong>{t("Suggest long-term memories")}</strong>
-                    <p>
-                      {t(
-                        "Your assistant can propose useful context. You confirm what gets saved.",
-                      )}{" "}
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    name="memory_enabled"
-                    className="switch"
-                    defaultChecked={query.data.memory_enabled ?? true}
-                    aria-label={t("Suggest long-term memories")}
-                  />
-                </div>
-                <div className="form-grid">
-                  <label>
-                    {t("Display name")}{" "}
-                    <input
-                      name="name"
-                      defaultValue={String(query.data.name || user.name || "")}
-                    />
-                  </label>
-                  <label>
-                    {t("Time zone")}{" "}
-                    <input
-                      name="timezone"
-                      defaultValue={String(
-                        query.data.timezone ||
-                          Intl.DateTimeFormat().resolvedOptions().timeZone,
-                      )}
-                      placeholder="Asia/Shanghai"
-                      required
-                    />
-                  </label>
-                </div>
-              </section>
-              <div className="settings-save">
-                <span>
-                  {saved
-                    ? t("Changes saved")
-                    : t("Changes apply to your account only.")}
-                </span>
-                <Button
-                  type="submit"
-                  disabled={action.pending || embeddingTesting || chatTesting}
-                >
-                  {action.pending ? (
-                    <LoaderCircle className="spin" size={15} />
-                  ) : (
-                    <Check size={15} />
-                  )}{" "}
-                  {t("Save changes")}{" "}
-                </Button>
-              </div>
-            </form>
-            <aside>
-              <section className="panel privacy-card">
-                <ShieldCheck size={27} strokeWidth={1.3} />
-                <h2>
-                  {t("Private by design.")} <br />
-                  {t("Controlled by you.")}{" "}
-                </h2>
-                <p>
-                  {t(
-                    "Your assistant uses your context to help you. You decide what it knows and what it can do.",
-                  )}{" "}
-                </p>
-                <ul>
-                  <li>
-                    <Check size={13} /> {t("User-isolated workspace data")}{" "}
-                  </li>
-                  <li>
-                    <Check size={13} /> {t("Keys held on the server")}{" "}
-                  </li>
-                  <li>
-                    <Check size={13} /> {t("Explicit action approvals")}{" "}
-                  </li>
-                  <li>
-                    <Check size={13} />{" "}
-                    {t("Export and delete your memories")}{" "}
-                  </li>
-                </ul>
-              </section>
-              <section className="panel data-card">
-                <h3>{t("Your data travels with you.")}</h3>
-                <p>
-                  {t(
-                    "Download your workspace as a JSON archive. API keys and authorization tokens are excluded.",
-                  )}{" "}
-                </p>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    void action.run(downloadExport);
-                  }}
-                >
-                  <ArrowDownToLine size={14} /> {t("Export workspace")}{" "}
-                </Button>
-                <div className="data-divider" />
-                <h3>{t("Start a fresh memory.")}</h3>
-                <p>
-                  {t(
-                    "Review and remove individual memories in your memory center. Deletions require your approval.",
-                  )}{" "}
-                </p>
-                <Button variant="ghost" size="sm" asChild>
-                  <Link href="/memory">
-                    <Brain size={14} /> {t("Manage memories")}{" "}
-                  </Link>
-                </Button>
-                <div className="data-divider" />
-                <h3>{t("Close your account.")}</h3>
-                <p>
-                  {t(
-                    "Request deletion of your workspace, memories, conversations and saved credentials. Review and approve the request in Activity before deletion takes place.",
-                  )}{" "}
-                </p>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  disabled={action.pending}
-                  onClick={() => {
-                    if (
-                      prompt(
-                        t(
-                          "Type DELETE to request permanent account deletion. You will still need to approve the exact request in Activity.",
-                        ),
-                      ) === "DELETE"
-                    )
-                      void action.run(async () => {
-                        await api("/account/delete", {
-                          method: "POST",
-                          body: JSON.stringify({ confirmation: "DELETE" }),
-                        });
-                        alert(
-                          t(
-                            "Your account deletion request is awaiting approval in Activity & approvals.",
-                          ),
-                        );
-                      });
-                  }}
-                >
-                  <Trash2 size={13} /> {t("Request account deletion")}{" "}
-                </Button>
-              </section>
-              <div className="account-note">
-                <span className="user-avatar">
-                  {user.email[0].toUpperCase()}
+            />
+            <EmbeddingSettings
+              settings={snapshot}
+              pending={blocked || chatTesting}
+              onTestPendingChange={setEmbeddingTesting}
+              onChange={() => setSaved(false)}
+              onRemoveKey={async () => {
+                setSaved(false);
+                return persistSettings({ embedding_api_key: "" });
+              }}
+            />
+            <section className="panel settings-section">
+              <div className="settings-section-heading">
+                <span className="small-icon">
+                  <Brain size={21} />
                 </span>
                 <div>
-                  <strong>{user.email}</strong>
-                  <small>{t("Signed in to your personal account")}</small>
+                  <h2>{t("Memory & preferences")}</h2>
+                  <p>
+                    {t(
+                      "Choose how your workspace remembers and organizes your day.",
+                    )}{" "}
+                  </p>
                 </div>
               </div>
-            </aside>
+              <LanguageSelector />
+              <div className="toggle-field">
+                <div>
+                  <strong>{t("Suggest long-term memories")}</strong>
+                  <p>
+                    {t(
+                      "Your assistant can propose useful context. You confirm what gets saved.",
+                    )}{" "}
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  name="memory_enabled"
+                  className="switch"
+                  defaultChecked={snapshot.memory_enabled ?? true}
+                  aria-label={t("Suggest long-term memories")}
+                />
+              </div>
+              <div className="form-grid">
+                <label>
+                  {t("Display name")}{" "}
+                  <input
+                    name="name"
+                    defaultValue={String(snapshot.name || user.name || "")}
+                  />
+                </label>
+                <label>
+                  {t("Time zone")}{" "}
+                  <input
+                    name="timezone"
+                    defaultValue={String(
+                      snapshot.timezone ||
+                        Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    )}
+                    placeholder="Asia/Shanghai"
+                    required
+                  />
+                </label>
+              </div>
+            </section>
+            <div className="settings-save">
+              <span>
+                {saved
+                  ? t("Changes saved")
+                  : t("Changes apply to your account only.")}
+              </span>
+              <Button
+                type="submit"
+                disabled={blocked || embeddingTesting || chatTesting}
+              >
+                {action.pending ? (
+                  <LoaderCircle className="spin" size={15} />
+                ) : (
+                  <Check size={15} />
+                )}{" "}
+                {t("Save changes")}{" "}
+              </Button>
+            </div>
+          </fieldset>
+        </form>
+        <aside>
+          <section className="panel privacy-card">
+            <ShieldCheck size={27} strokeWidth={1.3} />
+            <h2>
+              {t("Private by design.")} <br />
+              {t("Controlled by you.")}{" "}
+            </h2>
+            <p>
+              {t(
+                "Your assistant uses your context to help you. You decide what it knows and what it can do.",
+              )}{" "}
+            </p>
+            <ul>
+              <li>
+                <Check size={13} /> {t("User-isolated workspace data")}{" "}
+              </li>
+              <li>
+                <Check size={13} /> {t("Keys held on the server")}{" "}
+              </li>
+              <li>
+                <Check size={13} /> {t("Explicit action approvals")}{" "}
+              </li>
+              <li>
+                <Check size={13} /> {t("Export and delete your memories")}{" "}
+              </li>
+            </ul>
+          </section>
+          <section className="panel data-card">
+            <h3>{t("Your data travels with you.")}</h3>
+            <p>
+              {t(
+                "Download your workspace as a JSON archive. API keys and authorization tokens are excluded.",
+              )}{" "}
+            </p>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                void action.run(downloadExport);
+              }}
+            >
+              <ArrowDownToLine size={14} /> {t("Export workspace")}{" "}
+            </Button>
+            <div className="data-divider" />
+            <h3>{t("Start a fresh memory.")}</h3>
+            <p>
+              {t(
+                "Review and remove individual memories in your memory center. Deletions require your approval.",
+              )}{" "}
+            </p>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href="/memory">
+                <Brain size={14} /> {t("Manage memories")}{" "}
+              </Link>
+            </Button>
+            <div className="data-divider" />
+            <h3>{t("Close your account.")}</h3>
+            <p>
+              {t(
+                "Request deletion of your workspace, memories, conversations and saved credentials. Review and approve the request in Activity before deletion takes place.",
+              )}{" "}
+            </p>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={action.pending}
+              onClick={() => {
+                if (
+                  prompt(
+                    t(
+                      "Type DELETE to request permanent account deletion. You will still need to approve the exact request in Activity.",
+                    ),
+                  ) === "DELETE"
+                )
+                  void action.run(async () => {
+                    await api("/account/delete", {
+                      method: "POST",
+                      body: JSON.stringify({ confirmation: "DELETE" }),
+                    });
+                    alert(
+                      t(
+                        "Your account deletion request is awaiting approval in Activity & approvals.",
+                      ),
+                    );
+                  });
+              }}
+            >
+              <Trash2 size={13} /> {t("Request account deletion")}{" "}
+            </Button>
+          </section>
+          <div className="account-note">
+            <span className="user-avatar">{user.email[0].toUpperCase()}</span>
+            <div>
+              <strong>{user.email}</strong>
+              <small>{t("Signed in to your personal account")}</small>
+            </div>
           </div>
-        )
-      )}
+        </aside>
+      </div>
     </>
   );
 }
@@ -2431,7 +2498,11 @@ export function ChatPage() {
     setError(undefined);
     setEvents([]);
     setPending(true);
-    controller.current = new AbortController();
+    const requestController = new AbortController();
+    controller.current = requestController;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let terminalReceived = false;
+    let streamFailed = false;
     const assistantId = crypto.randomUUID();
     setMessages((prev) => [
       ...(prev ?? history.data ?? []),
@@ -2448,8 +2519,12 @@ export function ChatPage() {
           session_id: session,
           model: model || settings.data?.model || undefined,
         }),
-        signal: controller.current.signal,
+        signal: requestController.signal,
       });
+      // The server persists the conversation before model execution. Pin its
+      // identity before reading tokens so failures/cancellation keep context.
+      const responseSession = response.headers.get("X-Session-ID");
+      if (responseSession) setSession(responseSession);
       if (!response.ok) {
         const body = await response.json();
         throw new Error(
@@ -2459,7 +2534,7 @@ export function ChatPage() {
         );
       }
       if (!response.body) throw new Error("This response has no stream.");
-      const reader = response.body.getReader();
+      reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
       function consume(frame: string) {
@@ -2470,6 +2545,7 @@ export function ChatPage() {
           .join("\n");
         if (!data || data === "[DONE]") return;
         const update = JSON.parse(data) as StreamEvent;
+        if (update.session_id) setSession(update.session_id);
         if (update.type === "token")
           setMessages((prev) =>
             (prev || []).map((m) =>
@@ -2479,21 +2555,21 @@ export function ChatPage() {
             ),
           );
         else if (update.type === "done") {
-          if (update.session_id) setSession(update.session_id);
+          terminalReceived = true;
         } else if (update.type === "error")
           throw new Error(
             update.message ||
               update.content ||
               "The assistant encountered an error.",
           );
-        else setEvents((prev) => [...prev.slice(-19), update]);
+        else if (update.type !== "session")
+          setEvents((prev) => [...prev.slice(-19), update]);
       }
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        buffer += decoder
-          .decode(value, { stream: true })
-          .replaceAll("\r\n", "\n");
+        buffer += decoder.decode(value, { stream: true });
+        buffer = buffer.replaceAll("\r\n", "\n");
         let boundary;
         while ((boundary = buffer.indexOf("\n\n")) >= 0) {
           const frame = buffer.slice(0, boundary);
@@ -2501,9 +2577,14 @@ export function ChatPage() {
           consume(frame);
         }
       }
+      buffer += decoder.decode();
       if (buffer.trim()) consume(buffer);
-      await client.invalidateQueries({ queryKey: ["sessions"] });
+      if (!terminalReceived)
+        throw new Error(
+          "The connection ended before completion. Your conversation is kept; check its history before retrying.",
+        );
     } catch (err) {
+      streamFailed = true;
       if (err instanceof Error && err.name === "AbortError")
         setError("Generation stopped. Any completed content is shown above.");
       else
@@ -2511,7 +2592,20 @@ export function ChatPage() {
           err instanceof Error ? err.message : "Couldn't reach your assistant.",
         );
     } finally {
+      if (!terminalReceived || streamFailed) requestController.abort();
+      if (reader) {
+        try {
+          if (!terminalReceived || streamFailed) await reader.cancel();
+        } catch {
+          // An already-aborted body can reject cancellation. Preserve the
+          // original visible failure instead of replacing it with cleanup noise.
+        } finally {
+          reader.releaseLock();
+        }
+      }
+      if (controller.current === requestController) controller.current = null;
       setPending(false);
+      await client.invalidateQueries({ queryKey: ["sessions"] });
     }
   }
   function newChat() {
@@ -2746,6 +2840,7 @@ export function ChatPage() {
               className="icon-button"
               aria-label={t("New conversation")}
               onClick={newChat}
+              disabled={pending}
             >
               <Plus size={16} />
             </button>
@@ -2769,6 +2864,7 @@ export function ChatPage() {
                   setMessages(undefined);
                   setSession(item.id);
                   setEvents([]);
+                  setError(undefined);
                 }}
               >
                 <MessageSquare size={15} />
