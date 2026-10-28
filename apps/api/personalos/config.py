@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +30,18 @@ class Settings(BaseSettings):
     hy_memory_enabled: bool = False
     typesafe_api_key: str = ""
     decision_provider: str = "rules"
+
+    @field_validator("embedding_dimensions", mode="before")
+    @classmethod
+    def embedding_dimensions_from_environment(cls, value):
+        # Literal[int] does not coerce dotenv strings. Convert before enforcing
+        # the official dimension choices so a freshly bootstrapped .env starts.
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError as exc:
+                raise ValueError("Embedding dimensions must be 1024, 768, 512 or 256") from exc
+        return value
 
 
 @lru_cache

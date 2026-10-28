@@ -6,12 +6,25 @@ from pathlib import Path
 import httpx
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
-from personalos.config import get_settings
+from personalos.config import Settings, get_settings
 from personalos.services.embedding import EmbeddingConfiguration, EmbeddingService, validate_embedding_url
 from test_api import clients, register  # noqa: F401
 
 BASE_URL = "https://protocol-fixture.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+
+
+def test_fresh_dotenv_dimension_is_parsed_before_literal_validation(tmp_path, monkeypatch):
+    monkeypatch.delenv("EMBEDDING_DIMENSIONS", raising=False)
+    config_file = tmp_path / ".env"
+    config_file.write_text("EMBEDDING_MODEL=qwen3.7-text-embedding-flash\nEMBEDDING_DIMENSIONS=1024\n")
+    assert Settings(_env_file=config_file).embedding_dimensions == 1024
+    monkeypatch.setenv("EMBEDDING_DIMENSIONS", "768")
+    assert Settings(_env_file=config_file).embedding_dimensions == 768
+    monkeypatch.setenv("EMBEDDING_DIMENSIONS", "1536")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=config_file)
 
 
 def test_settings_encrypt_isolate_clear_embedding_key_and_do_not_enable_index(clients, monkeypatch):  # noqa: F811

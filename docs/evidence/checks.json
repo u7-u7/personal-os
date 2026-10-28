@@ -1,8 +1,8 @@
 {
   "python": {
-    "passed": 50,
+    "passed": 51,
     "skipped": 0,
-    "seconds": 5.03,
+    "seconds": 5.02,
     "real_postgres": true,
     "model_http_protocol_fixture": true,
     "external_model_acceptance": false
@@ -33,8 +33,8 @@
     "model": "qwen3.7-text-embedding-flash",
     "region": "cn-beijing",
     "dimensions": 1024,
-    "python_passed": 50,
-    "python_seconds": 5.03,
+    "python_passed": 51,
+    "python_seconds": 5.02,
     "sdk_http_fixtures": true,
     "live_provider_verified": false,
     "authorization": "User will enter workspace URL and key in Settings later",
@@ -42,6 +42,7 @@
     "api_image": "sha256:1fb1ecf9d7a2755524d818634f163c0a730bd932757044e9aca37343048fb05c",
     "web_image": "sha256:5aa064b18444fb3fa82e1a9c08cf27befb3389a03c44b7bb64f2422fb30cc42f",
     "docker_e2e_passed": 1,
-    "docker_e2e_seconds": 18.6
+    "docker_e2e_seconds": 18.6,
+    "fresh_env_dimension_regression": true
   }
 }
