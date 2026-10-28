@@ -468,11 +468,49 @@ async def update_settings(payload: SettingsInput, user: Viewer, db: DB):
 
 @app.get("/api/export")
 def export_data(user: Viewer, db: DB):
-    records = db.scalars(select(Record).where(Record.owner_id == user.id, Record.deleted_at.is_(None)).limit(10000)).all()
-    messages = db.scalars(select(Message).where(Message.owner_id == user.id, Message.deleted_at.is_(None)).limit(50000)).all()
-    return {"exported_at": utcnow(), "user": public_user(user), "records": [safe_integration(r) if r.kind == "integration" else serialize(r) for r in records if r.kind != "oauth_state"],
-            "automations": automations(user, db), "messages": [serialize(r) for r in messages],
-            "notice": "Credentials are excluded. Export is limited to 10,000 records and 50,000 messages."}
+    from fastapi.encoders import jsonable_encoder
+
+    owner_id, bind = user.id, db.get_bind()
+
+    def json_fragment(value):
+        return json.dumps(jsonable_encoder(value), ensure_ascii=False, separators=(",", ":"))
+
+    async def export_chunks():
+        # A separate server-cursor session owns the complete response lifetime.
+        # The shared lease prevents approved erasure from racing this snapshot;
+        # repeatable-read makes all exported collections mutually consistent.
+        with Session(bind=bind, expire_on_commit=False) as export_db:
+            with account_lease(export_db, owner_id):
+                export_db.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+                export_db.execute(text("SET TRANSACTION READ ONLY"))
+                snapshot_user = export_db.get(User, owner_id)
+                yield '{"format_version":1,"exported_at":' + json_fragment(utcnow())
+                yield ',"user":' + json_fragment(public_user(snapshot_user))
+                resources = [
+                    ("records", Record, safe_integration, [Record.kind != "oauth_state"]),
+                    ("messages", Message, serialize, []),
+                    ("automations", Automation, serialize, []),
+                    ("executions", Execution, serialize, []),
+                ]
+                for name, model, encoder, extra_filters in resources:
+                    yield ',"' + name + '":['
+                    query = select(model).where(model.owner_id == owner_id, model.deleted_at.is_(None), *extra_filters).order_by(model.id)
+                    rows = export_db.scalars(query.execution_options(yield_per=500, stream_results=True))
+                    batch, emitted = [], False
+                    try:
+                        for row in rows:
+                            batch.append(json_fragment(encoder(row)))
+                            if len(batch) == 500:
+                                yield ("," if emitted else "") + ",".join(batch)
+                                emitted, batch = True, []
+                        if batch:
+                            yield ("," if emitted else "") + ",".join(batch)
+                    finally:
+                        rows.close()
+                    yield "]"
+                yield ',"notice":"Complete account export. Credentials and OAuth state are excluded."}'
+    return StreamingResponse(export_chunks(), media_type="application/json", headers={
+        "Content-Disposition": 'attachment; filename="personalos-export.json"', "Cache-Control": "no-store"})
 
 
 @app.get("/api/briefings")
