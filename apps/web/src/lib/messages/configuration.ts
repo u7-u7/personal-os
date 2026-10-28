@@ -1,4 +1,63 @@
 export const configurationMessages: Record<string, string> = {
+  "Provider returned unsupported response compression":
+    "供应商未按要求返回未压缩响应，无法安全读取；请检查接口兼容性。",
+  "Provider response exceeds the 1 MiB size limit":
+    "供应商响应超过 1 MiB 安全上限，已停止读取。",
+  "Test the current fields, then save to apply them. Saving embedding settings does not enable Hy-Memory indexing.":
+    "可以先测试当前表单，再保存使配置生效。保存向量模型配置不会开启 Hy-Memory 索引。",
+  "Choose an available model": "选择可用模型",
+  "Choose main model": "选择主模型",
+  "Test current configuration": "测试当前配置",
+  "Fetch available models": "获取可用模型",
+  "Check provider balance": "查询供应商余额",
+  "These actions use the fields above without saving. Re-enter the key when changing the endpoint. The connection test sends a short message and may incur a small charge; model discovery and balance checks do not run inference.":
+    "这些操作直接使用上方表单，不会自动保存。修改地址后请重新输入密钥。连通检测会发送固定短消息，可能产生少量费用；获取模型列表和查询余额不会执行推理。",
+  "Choose fast routing model": "选择快速路由模型",
+  "Choose reasoning routing model": "选择推理路由模型",
+  "The current {model} returned real text. The chat connection check passed.":
+    "当前配置的 {model} 返回了真实文本，聊天连接验证通过。",
+  "Retrieved {count} available models. Choose one above or enter a model ID manually.":
+    "已获取 {count} 个可用模型，可在上方选择，也可手动填写模型 ID。",
+  "The provider returned no available models. You can still enter a model ID manually.":
+    "供应商未返回可用模型，你仍可手动填写模型 ID。",
+  "This provider does not offer a supported balance API.":
+    "当前供应商没有已支持的余额查询接口。",
+  "Provider account is available.": "供应商账户余额可供 API 调用。",
+  "Provider account is unavailable.": "供应商账户余额不足以支持 API 调用。",
+  "Total balance": "可用总余额",
+  "Granted balance": "未过期赠金",
+  "Topped-up balance": "充值余额",
+  "The provider returned no balance details.": "供应商未返回余额明细。",
+  "Chat configuration is not ready.": "聊天配置尚未就绪。",
+  "Enter a valid chat provider base URL.": "请填写有效的聊天服务接口地址。",
+  "Enter a chat model ID before testing.":
+    "请先填写聊天模型 ID，再测试连通性。",
+  "Settings changed. Refresh before testing":
+    "配置已变更，请重新读取最新设置后再检测。",
+  "Complete the Base URL and API key in Settings before querying the provider":
+    "请先在设置页填写接口地址与 API 密钥，再查询供应商。",
+  "Provider timed out or could not be reached; check Base URL and network":
+    "供应商连接超时或不可达，请检查接口地址和网络。",
+  "Provider authentication failed; check the API key":
+    "供应商认证失败，请检查 API 密钥。",
+  "Provider balance is insufficient; top up the provider account":
+    "供应商账户余额不足，请充值后再试。",
+  "Provider denied access; check API key permissions":
+    "供应商拒绝访问，请检查 API 密钥的权限。",
+  "Provider endpoint was not found; check Base URL and API support":
+    "未找到供应商接口，请检查地址以及是否支持该 API。",
+  "Provider rate limit reached; try again later":
+    "供应商请求频率受限，请稍后重试。",
+  "Provider returned an invalid response": "供应商返回了无效响应。",
+  "Enter a new API key when changing the endpoint":
+    "修改聊天接口地址后，请重新填写 API 密钥。",
+  "Enter a new embedding API key when changing the endpoint":
+    "修改向量接口地址后，请重新填写向量模型 API 密钥。",
+  "Test current embedding configuration": "测试当前向量配置",
+  "Test the current fields without saving. A blank key reuses your saved key only when the endpoint is unchanged. The fixed text check may incur a small charge and never sends your memories.":
+    "直接测试当前表单，无需先保存。密钥留空时，仅在地址未变化的情况下复用已保存的密钥。检测使用固定文本，可能产生少量费用，不会发送你的记忆。",
+  "The current endpoint returned a valid {dimensions}-dimension embedding from {model}. Save to apply any changes.":
+    "当前接口返回了 {model} 的有效 {dimensions} 维向量；修改后的配置仍需保存才会生效。",
   "Loading your AI settings…": "正在读取你的 AI 配置…",
   "Unable to load AI settings. AI features are temporarily unavailable. {error}":
     "无法读取 AI 配置，AI 功能暂不可用。{error}",

@@ -3,7 +3,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 class Credentials(BaseModel):
@@ -92,25 +92,50 @@ class ApprovalInput(BaseModel):
     version: int = Field(ge=1)
 
 
-class SettingsInput(BaseModel):
+class ChatConfigurationInput(BaseModel):
+    model: str | None = Field(default=None, max_length=100)
+    base_url: str | None = Field(default=None, max_length=2000)
+    api_key: str | None = Field(default=None, max_length=1000, repr=False)
+
+    @field_validator("model", "base_url", "api_key")
+    @classmethod
+    def trim_chat_configuration(cls, value):
+        return value.strip() if value is not None else None
+
+
+class EmbeddingConfigurationInput(BaseModel):
     embedding_model: Literal["qwen3.7-text-embedding-flash"] | None = None
     embedding_base_url: str | None = Field(default=None, max_length=2000)
-    embedding_api_key: str | None = Field(default=None, max_length=1000)
+    embedding_api_key: str | None = Field(default=None, max_length=1000, repr=False)
     embedding_dimensions: Literal[1024, 768, 512, 256] | None = None
+
+    @field_validator("embedding_base_url", "embedding_api_key")
+    @classmethod
+    def trim_embedding_configuration(cls, value):
+        return value.strip() if value is not None else None
+
+
+class ChatDiagnosticsInput(ChatConfigurationInput):
+    model_config = ConfigDict(extra="forbid")
+    version: int | None = Field(default=None, ge=1)
+
+
+class EmbeddingDiagnosticsInput(EmbeddingConfigurationInput):
+    model_config = ConfigDict(extra="forbid")
+    version: int | None = Field(default=None, ge=1)
+
+
+class SettingsInput(ChatConfigurationInput, EmbeddingConfigurationInput):
     fast_model: str | None = Field(default=None, max_length=100)
     reasoning_model: str | None = Field(default=None, max_length=100)
     decision_provider: Literal["rules", "llm", "jev"] | None = None
-    model: str | None = Field(default=None, max_length=100)
-    base_url: str | None = Field(default=None, max_length=2000)
-    api_key: str | None = Field(default=None, max_length=1000)
     name: str | None = Field(default=None, min_length=1, max_length=120)
     memory_enabled: bool | None = None
     theme: Literal["light", "dark", "system"] | None = None
     timezone: str | None = None
     version: int = Field(ge=1)
 
-    @field_validator("model", "base_url", "api_key", "embedding_base_url", "embedding_api_key",
-                     "fast_model", "reasoning_model")
+    @field_validator("fast_model", "reasoning_model")
     @classmethod
     def trim_model_configuration(cls, value):
         return value.strip() if value is not None else None

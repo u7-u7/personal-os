@@ -1,4 +1,10 @@
-# PersonalOS verification report · 2026-10-28
+# PersonalOS verification report
+
+## Provider diagnostics · 2026-10-29
+
+Current-form connection checks, automatic/manual model discovery and official DeepSeek balance querying are implemented. The saved DeepSeek connection passed real model-list, balance and minimal non-streaming chat calls through the application API; browser checks also verified automatic discovery, model selection, chat receipt and a real currency balance. Draft probes did not change saved settings. An invalid draft key/model, a stale settings version, a changed endpoint without a replacement key and unsupported balance capability returned explicit errors/results. No example provider response is used as acceptance evidence.
+
+Existing backend PostgreSQL suite: **51 passed**. Existing complete Web/API browser E2E: **1 passed (18.7s)**. TypeScript, ESLint, Ruff and production build passed. No test case was added or modified. [Detailed acceptance and remaining boundaries](progress/2026-10-29-provider-diagnostics.md). Qwen credentials are still missing; successful embeddings, full Agent workflows, Hy-Memory/Jev and Google Calendar are not claimed by these diagnostics.
 
 ## Configuration and Agent reliability follow-up
 

@@ -67,6 +67,23 @@ export interface ChatConnectionCheck {
   model: string;
   settings_version: number;
 }
+export interface ChatModelList {
+  provider: "deepseek" | "openai_compatible";
+  models: { id: string; owned_by: string; name?: string }[];
+  settings_version: number;
+}
+export interface ChatBalance {
+  provider: "deepseek" | "openai_compatible";
+  supported: boolean;
+  is_available?: boolean;
+  balance_infos?: {
+    currency: "CNY" | "USD";
+    total_balance: string;
+    granted_balance: string;
+    topped_up_balance: string;
+  }[];
+  settings_version: number;
+}
 export interface EmbeddingConnectionCheck {
   status: "ok";
   model: string;

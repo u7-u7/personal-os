@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import {
   CheckCircle2,
@@ -29,27 +29,53 @@ export function EmbeddingSettings({
 }) {
   const { t, errorText } = useI18n();
   const keyInput = useRef<HTMLInputElement>(null);
+  const fields = useRef<HTMLFieldSetElement>(null);
+  const [revision, setRevision] = useState(0);
+  const locked = useRef(false);
   const check = useMutation({
-    mutationFn: async (version: number) => ({
-      ...(await api<EmbeddingConnectionCheck>("/settings/embedding/test", {
+    mutationFn: async (_identity: { version: number; revision: number }) => {
+      const form = fields.current?.form;
+      const value = (name: string) => {
+        const input = form?.elements.namedItem(name);
+        return input instanceof HTMLInputElement ||
+          input instanceof HTMLSelectElement
+          ? input.value.trim()
+          : "";
+      };
+      const key = value("embedding_api_key");
+      return api<EmbeddingConnectionCheck>("/settings/embedding/test", {
         method: "POST",
-        body: "{}",
-      })),
-      settingsVersion: version,
-    }),
+        body: JSON.stringify({
+          version: _identity.version,
+          embedding_model: value("embedding_model"),
+          embedding_base_url: value("embedding_base_url"),
+          embedding_dimensions: Number(value("embedding_dimensions")),
+          ...(key ? { embedding_api_key: key } : {}),
+        }),
+      });
+    },
   });
-  const currentCheck = check.variables === settings.version;
+  const currentCheck =
+    check.variables?.version === settings.version &&
+    check.variables?.revision === revision;
   const serverSettingsChanged =
     check.data && check.data.settings_version !== settings.version;
   const disabled = pending || check.isPending;
+  const testLabel =
+    revision === 0
+      ? t("Test saved embedding connection")
+      : t("Test current embedding configuration");
 
   async function testConnection() {
+    if (disabled || locked.current) return;
+    locked.current = true;
     onTestPendingChange(true);
     try {
-      await check.mutateAsync(settings.version);
+      await check.mutateAsync({ version: settings.version, revision });
     } catch {
       // TanStack retains the API error below; a rejected probe is never a success.
     } finally {
+      locked.current = false;
       onTestPendingChange(false);
     }
   }
@@ -89,9 +115,11 @@ export function EmbeddingSettings({
         </div>
       </div>
       <fieldset
+        ref={fields}
         className="embedding-fields"
         disabled={disabled}
         onChange={() => {
+          setRevision((value) => value + 1);
           check.reset();
           onChange();
         }}
@@ -170,7 +198,7 @@ export function EmbeddingSettings({
           type="button"
           size="sm"
           variant="secondary"
-          aria-label={t("Test saved embedding connection")}
+          aria-label={testLabel}
           disabled={disabled}
           onClick={() => void testConnection()}
         >
@@ -179,7 +207,7 @@ export function EmbeddingSettings({
           ) : (
             <FlaskConical size={14} />
           )}
-          {t("Test saved embedding connection")}
+          {testLabel}
         </Button>
         {settings.embedding_api_key_configured && (
           <Button
@@ -195,7 +223,7 @@ export function EmbeddingSettings({
       </div>
       <div className="field-note">
         {t(
-          "Save before testing. The check sends only fixed text, never your memories, and may incur a small provider charge.",
+          "Test the current fields without saving. A blank key reuses your saved key only when the endpoint is unchanged. The fixed text check may incur a small charge and never sends your memories.",
         )}
       </div>
       {currentCheck && check.error && (
@@ -216,7 +244,7 @@ export function EmbeddingSettings({
         <div className="success-banner" role="status">
           <CheckCircle2 size={16} />{" "}
           {t(
-            "The saved endpoint returned a valid {dimensions}-dimension embedding from {model}.",
+            "The current endpoint returned a valid {dimensions}-dimension embedding from {model}. Save to apply any changes.",
             { dimensions: check.data.dimensions, model: check.data.model },
           )}
         </div>

@@ -18,7 +18,7 @@ from personalos.config import get_settings
 from personalos.db import get_db, utcnow
 from personalos.models import AuthSession, Automation, Execution, Message, Record, User
 from personalos.schemas import (ApprovalInput, AutomationInput, ChatInput, Credentials, EventInput,
-                               IntegrationInput, MemoryInput, SettingsInput, TaskInput)
+                               ChatDiagnosticsInput, EmbeddingDiagnosticsInput, IntegrationInput, MemoryInput, SettingsInput, TaskInput)
 from personalos.security import (COOKIE_NAME, current_user, decrypt_config, encrypt_config,
                                 new_session, password_hasher)
 from personalos.services.agent import durable_graph_resources, generate_briefing, initialize_graph_storage, model_config, stream_agent
@@ -474,6 +474,15 @@ async def update_settings(payload: SettingsInput, user: Viewer, db: DB):
         await validate_public_url(changes["base_url"])
     if changes.get("embedding_base_url"):
         await validate_embedding_url(changes["embedding_base_url"])
+    defaults = get_settings()
+    for url_field, key_field, default_url in (
+            ("base_url", "api_key", defaults.openai_base_url),
+            ("embedding_base_url", "embedding_api_key", defaults.embedding_base_url)):
+        if (url_field in changes and key_field not in changes and private.get(key_field)
+                and changes[url_field].rstrip("/") != private.get(url_field, default_url).strip().rstrip("/")):
+            message = ("Enter a new embedding API key when changing the endpoint" if url_field.startswith("embedding_")
+                       else "Enter a new API key when changing the endpoint")
+            raise HTTPException(422, message)
     for key in {"api_key", "base_url", "embedding_api_key", "embedding_base_url"} & changes.keys():
         private[key] = changes.pop(key)
     if private.get("embedding_api_key") and not private.get("embedding_base_url", get_settings().embedding_base_url):
@@ -493,41 +502,65 @@ async def update_settings(payload: SettingsInput, user: Viewer, db: DB):
     return settings(user)
 
 
-@app.post("/api/settings/chat/test")
-async def test_chat_connection(user: Viewer, db: DB):
-    from personalos.services.model import ChatConfiguration, test_chat_connection as probe
+async def run_provider_diagnostic(payload, user: User, db: Session, *, action: str, probe, embedding: bool = False):
+    from personalos.services.embedding import EmbeddingConfiguration
+    from personalos.services.model import ChatConfiguration
 
     with account_lease(db, user.id):
-        configuration = ChatConfiguration.for_user(user)
-        details = {"model": configuration.model, "settings_version": user.version}
+        # Authentication may have loaded this row before another settings save.
+        db.refresh(user)
+        details = {"settings_version": user.version}
         try:
+            if payload.version is not None and payload.version != user.version:
+                raise HTTPException(409, "Settings changed. Refresh before testing")
+            draft = payload.model_dump(exclude_none=True, exclude={"version"})
+            configuration = (EmbeddingConfiguration if embedding else ChatConfiguration).for_user(user).with_draft(draft)
+            details["model"] = configuration.model
+            if embedding:
+                details["dimensions"] = configuration.dimensions
             result = await probe(configuration)
         except HTTPException as exc:
-            audit(db, user.id, "chat.connection_test", details={**details, "http_status": exc.status_code}, status="failed")
+            audit(db, user.id, action, details={**details, "http_status": exc.status_code}, status="failed")
             db.commit()
             raise
-        audit(db, user.id, "chat.connection_test", details=details)
+        audit(db, user.id, action, details=details)
         db.commit()
-        return {**result, "settings_version": user.version}
+        return {**result, "settings_version": details["settings_version"]}
+
+
+@app.post("/api/settings/chat/test")
+async def test_chat_connection(user: Viewer, db: DB, payload: ChatDiagnosticsInput | None = None):
+    from personalos.services.model import test_chat_connection as probe
+
+    return await run_provider_diagnostic(payload or ChatDiagnosticsInput(), user, db,
+                                         action="chat.connection_test", probe=probe)
+
+
+@app.post("/api/settings/chat/models")
+async def list_chat_models(user: Viewer, db: DB, payload: ChatDiagnosticsInput | None = None):
+    from personalos.services.model import list_chat_models as probe
+
+    return await run_provider_diagnostic(payload or ChatDiagnosticsInput(), user, db,
+                                         action="chat.models_list", probe=probe)
+
+
+@app.post("/api/settings/chat/balance")
+async def chat_balance(user: Viewer, db: DB, payload: ChatDiagnosticsInput | None = None):
+    from personalos.services.model import chat_balance as probe
+
+    return await run_provider_diagnostic(payload or ChatDiagnosticsInput(), user, db,
+                                         action="chat.balance_query", probe=probe)
 
 
 @app.post("/api/settings/embedding/test")
-async def test_embedding_connection(user: Viewer, db: DB):
-    from personalos.services.embedding import EmbeddingConfiguration, EmbeddingService
+async def test_embedding_connection(user: Viewer, db: DB, payload: EmbeddingDiagnosticsInput | None = None):
+    from personalos.services.embedding import EmbeddingService
 
-    with account_lease(db, user.id):
-        configuration = EmbeddingConfiguration.for_user(user)
-        details = {"model": configuration.model, "dimensions": configuration.dimensions,
-                   "settings_version": user.version}
-        try:
-            result = await EmbeddingService(configuration).test_connection()
-        except HTTPException as exc:
-            audit(db, user.id, "embedding.connection_test", details={**details, "http_status": exc.status_code}, status="failed")
-            db.commit()
-            raise
-        audit(db, user.id, "embedding.connection_test", details=details)
-        db.commit()
-        return {**result, "settings_version": user.version}
+    async def probe(configuration):
+        return await EmbeddingService(configuration).test_connection()
+
+    return await run_provider_diagnostic(payload or EmbeddingDiagnosticsInput(), user, db,
+                                         action="embedding.connection_test", probe=probe, embedding=True)
 
 
 @app.get("/api/export")
