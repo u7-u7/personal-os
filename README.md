@@ -39,7 +39,11 @@ npm run dev --prefix apps/web
 
 ## Models and Google Calendar
 
+After registering, follow the two-step AI setup card on the Dashboard or open **Settings**. Fill the chat model ID, compatible Base URL and API key, then configure the separate Qwen embedding endpoint and key. Save first; use each model's connection check to verify the saved version. A saved configuration is not proof of connectivity. Chat and briefings require chat configuration; missing embedding configuration does not block ordinary chat or manual tasks/calendar management. Optional Hy-Memory remains separately gated.
+
 In Settings choose an OpenAI-compatible provider, enter the API key, base URL and model. The key is encrypted on the server and never returned by Settings/export. The DeepSeek preset uses `https://api.deepseek.com` and the currently documented `deepseek-flash`; model names remain editable. Model invocation, structured decision output and tool calling require real-provider acceptance for the selected endpoint. See [DeepSeek documentation](https://api-docs.deepseek.com/quick_start/agent_integrations/) and [tool calling](https://api-docs.deepseek.com/guides/tool_calls/).
+
+Leaving a key field blank preserves its saved value; use the explicit clear action to disable it. A cleared personal key never falls back to an administrator key. Changing a Base URL requires a personal key unless that URL exactly matches the administrator's configured endpoint. Server defaults and personal configuration are labeled separately; neither secret is exposed to the browser.
 
 DeepSeek can serve the generative chat, task parsing, briefing and memory extraction paths. The selected embedding model is Qwen3.7 Embedding Flash (`qwen3.7-text-embedding-flash`, Beijing, 1024 dimensions by default). In the separate Embedding settings, paste your real Beijing workspace OpenAI-compatible Base URL and its Bailian API key, save, then test the saved connection. The key is encrypted separately from the chat key; a DeepSeek key is never reused. Supported dimensions are 1024/768/512/256. Configuring or probing this endpoint does not enable the deferred Hy-Memory data plane. Jev is a separate optional decision service. `DECISION_PROVIDER=llm` uses the configured ordinary LLM; `rules` is the explicit default, and `jev` requires its own credentials. Decisions never grant tool permissions.
 

@@ -109,6 +109,12 @@ class SettingsInput(BaseModel):
     timezone: str | None = None
     version: int = Field(ge=1)
 
+    @field_validator("model", "base_url", "api_key", "embedding_base_url", "embedding_api_key",
+                     "fast_model", "reasoning_model")
+    @classmethod
+    def trim_model_configuration(cls, value):
+        return value.strip() if value is not None else None
+
 
 class IntegrationInput(BaseModel):
     title: str = Field(min_length=1, max_length=200)

@@ -18,6 +18,7 @@ from openai import APIConnectionError, APIResponseValidationError, APIStatusErro
 from personalos.config import get_settings
 from personalos.models import User
 from personalos.security import decrypt_config
+from personalos.services.model import endpoint_key
 
 MODEL = "qwen3.7-text-embedding-flash"
 DIMENSIONS = {1024, 768, 512, 256}
@@ -38,11 +39,11 @@ class EmbeddingConfiguration:
     def for_user(cls, user: User):
         settings = get_settings()
         private = decrypt_config(user.secret_config)
+        endpoint = private.get("embedding_base_url", settings.embedding_base_url).strip().rstrip("/")
         return cls(
             model=user.preferences.get("embedding_model", settings.embedding_model),
-            base_url=private.get("embedding_base_url", settings.embedding_base_url).rstrip("/"),
-            # An explicit cleared per-user key disables the server fallback.
-            api_key=private.get("embedding_api_key", settings.embedding_api_key),
+            base_url=endpoint,
+            api_key=endpoint_key(private, "embedding_api_key", endpoint, settings.embedding_base_url, settings.embedding_api_key),
             dimensions=user.preferences.get("embedding_dimensions", settings.embedding_dimensions),
         )
 

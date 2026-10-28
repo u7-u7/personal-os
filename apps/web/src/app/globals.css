@@ -1,4 +1,126 @@
 @import "tailwindcss";
+
+.ai-configuration-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  margin-bottom: 22px;
+}
+.ai-setup-card {
+  margin-bottom: 28px;
+  padding: 23px 26px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--green);
+  border-radius: 12px;
+  background: var(--green-light);
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: 22px 30px;
+}
+.ai-setup-intro h2 {
+  margin: 7px 0 8px;
+  font-size: 20px;
+  letter-spacing: -0.5px;
+}
+.ai-setup-intro p,
+.ai-setup-footnote {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 0;
+}
+.ai-setup-steps {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+}
+.ai-setup-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px 14px;
+}
+.ai-setup-step:hover {
+  border-color: var(--green);
+  transform: translateX(2px);
+}
+.ai-step-number {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--green-soft);
+  color: var(--green);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.ai-setup-step > div {
+  flex: 1;
+  min-width: 0;
+}
+.ai-setup-step strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.ai-setup-step strong span {
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 10px;
+}
+.ai-setup-step.ready strong span {
+  color: var(--green);
+}
+.ai-setup-step small {
+  color: var(--muted);
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+}
+.ai-setup-footnote {
+  grid-column: 1 / -1;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.settings-section[id] {
+  scroll-margin-top: 90px;
+}
+.briefing-setup-link {
+  display: inline-flex;
+  gap: 9px;
+  align-items: center;
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--green);
+  font-weight: 600;
+  padding: 12px 15px;
+}
+.chat-config-action {
+  padding: 0 24px 16px;
+  color: var(--green);
+}
+.chat-config-action a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (max-width: 900px) {
+  .ai-setup-card {
+    grid-template-columns: 1fr;
+    padding: 20px;
+    gap: 17px;
+  }
+}
 :root {
   --bg: #f8f9f5;
   --surface: #fff;

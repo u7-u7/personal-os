@@ -18,6 +18,7 @@ The authoritative machine-readable schema is `GET /api/openapi.json`; browse `/a
 | `GET /api/approvals`; `POST /api/approvals/{id}/resolve` | Review frozen tool/arguments; approve/reject with version |
 | `GET /api/activity` | Audit, routing decisions, tools and durable Worker executions |
 | `GET/PATCH /api/settings` | Profile/privacy/model settings; only key-configured boolean is returned |
+| `POST /api/settings/chat/test`, `/api/settings/embedding/test` | Real fixed-content probe of saved model settings, with a version-bound receipt |
 | `GET /api/export` | Complete tenant export from a repeatable-read snapshot; credentials omitted |
 | `GET/POST /api/briefings` | Briefing history and generation from actual data |
 | `GET /api/chat/sessions`; `GET .../{id}/messages` | Account-owned conversations and persisted visible messages |
@@ -38,6 +39,14 @@ An unavailable model or missing server OAuth configuration returns 503. Provider
 Model settings optionally include `fast_model`, `reasoning_model` and `decision_provider` (`rules`, `llm`, `jev`). The selected route is recorded with the actual model. A briefing automation sets `extra.kind="briefing"`; the Worker invokes the real briefing service and persists its history. Memory conflict keys and replacement IDs live in validated `extra.fact_key` and `extra.supersedes`; the UI presents these as memory topics and replacement choices.
 
 Exports include all visible records, messages, schedules and execution history without row-count truncation. The JSON stream reads PostgreSQL in batches of 500 and holds an account lease until the download ends; clients should handle an interrupted download as incomplete.
+
+## AI setup and chat settings
+
+`GET /api/settings` reports `chat_configured`, `ai_setup_complete` (chat and embedding configuration present), `chat_config_source` (`personal`, `server_default`, `missing`) and `missing_configuration_fields` with separate `chat` / `embedding` arrays. These indicate configuration completeness, not provider connectivity or Hy-Memory readiness. Ordinary chat requires only chat configuration; missing chat settings return 503 before a user message is persisted.
+
+`POST /api/settings/chat/test` calls the saved chat model through the official SDK using a fixed, non-private prompt, a 20-second SDK timeout and no retries or redirects. Success returns `{status:"ok",model,settings_version}`. Missing configuration returns 503; network/provider/invalid text returns 502; provider throttling returns 429. Audits contain model/version/status, never keys or provider response bodies. The probe creates no conversation, graph checkpoint or memory. A receipt belongs only to the returned settings version and that individual request.
+
+`api_key` is write-only. Omission preserves it; an explicit empty value disables fallback to the administrator key. Administrator credentials are used only with their own configured endpoint, for both chat and embedding. An endpoint override cannot forward an administrator key to a different service/workspace.
 
 ## Embedding settings
 

@@ -48,13 +48,24 @@ export interface Settings {
   decision_provider?: "rules" | "llm" | "jev";
   base_url?: string;
   api_key_configured?: boolean;
+  chat_configured: boolean;
+  chat_config_source: "personal" | "server_default" | "missing";
+  ai_setup_complete: boolean;
+  missing_configuration_fields: { chat: string[]; embedding: string[] };
   embedding_model?: string;
   embedding_base_url?: string;
   embedding_dimensions?: number;
   embedding_api_key_configured?: boolean;
+  embedding_configured: boolean;
+  embedding_index_status?: string;
   memory_enabled?: boolean;
   timezone?: string;
   [key: string]: unknown;
+}
+export interface ChatConnectionCheck {
+  status: "ok";
+  model: string;
+  settings_version: number;
 }
 export interface EmbeddingConnectionCheck {
   status: "ok";
