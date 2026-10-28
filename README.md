@@ -83,4 +83,4 @@ Use a disposable database for tests. PostgreSQL transaction tests create isolate
 
 `apps/web` is Next.js/TypeScript/Tailwind/shadcn/ui primitives/TanStack Query. `apps/api` is FastAPI/Pydantic/SQLAlchemy/Alembic/LangGraph. The Worker is a separate process and PostgreSQL is the task source of truth. CI runs safety checks, PostgreSQL transaction tests and browser acceptance.
 
-Contributions use feature branches and reviewable PRs with commands, evidence and remaining acceptance boundaries. Do not merge `main` without maintainer authorization. Licensed under [MIT](LICENSE).
+Contributions use feature branches and reviewable PRs with commands, evidence and remaining acceptance boundaries. The maintainer granted standing authorization on 2026-10-28 to merge PersonalOS changes into `main` after applicable checks pass, without asking for confirmation each time; failed checks must still be resolved. Licensed under [MIT](LICENSE).
