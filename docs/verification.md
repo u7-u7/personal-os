@@ -1,5 +1,11 @@
 # PersonalOS verification report
 
+## Beijing embedding endpoint compatibility · 2026-10-29
+
+The official legacy Beijing endpoint `https://dashscope.aliyuncs.com/compatible-mode/v1` was incorrectly rejected by workspace-only validation. It is now accepted alongside valid Beijing workspace hosts, with existing URL/key/index boundaries retained. UI copy and placeholders reflect both choices. Official documentation recommends workspace migration and explicitly retains the existing endpoint.
+
+Existing PostgreSQL suite **51 passed**, Web/API E2E **1 passed (18.3s)**, Ruff/TypeScript/ESLint passed. Real settings API checks accepted both allowed forms and rejected lookalike/overseas/HTTP endpoints. A real call with an intentionally invalid, unsaved key reached the provider and returned upstream 401; no valid vectors or model authorization are claimed. [Design and acceptance evidence](plans/2026-10-29-beijing-embedding-endpoint.md).
+
 ## Provider diagnostics · 2026-10-29
 
 Current-form connection checks, automatic/manual model discovery and official DeepSeek balance querying are implemented. The saved DeepSeek connection passed real model-list, balance and minimal non-streaming chat calls through the application API; browser checks also verified automatic discovery, model selection, chat receipt and a real currency balance. Draft probes did not change saved settings. An invalid draft key/model, a stale settings version, a changed endpoint without a replacement key and unsupported balance capability returned explicit errors/results. No example provider response is used as acceptance evidence.

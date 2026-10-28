@@ -109,7 +109,7 @@ export function EmbeddingSettings({
           <h2 id="embedding-heading">{t("2. Your embedding model")}</h2>
           <p>
             {t(
-              "Qwen3.7 Embedding Flash turns text into memory retrieval vectors. Use a separate endpoint and API key from your Beijing Model Studio workspace. Chat remains available without embeddings.",
+              "Qwen3.7 Embedding Flash turns text into memory retrieval vectors. Use an official Beijing Model Studio endpoint and a separate embedding API key. Chat remains available without embeddings.",
             )}
           </p>
         </div>
@@ -150,21 +150,26 @@ export function EmbeddingSettings({
           </label>
         </div>
         <label>
-          {t("Beijing workspace base URL")}{" "}
+          {t("Beijing embedding base URL")}{" "}
           <span className="label-meta">{t("Required for first setup")}</span>
           <input
-            aria-label={t("Beijing workspace base URL")}
+            aria-label={t("Beijing embedding base URL")}
             name="embedding_base_url"
             type="url"
             defaultValue={settings.embedding_base_url || ""}
-            placeholder="https://YOUR-WORKSPACE-ID.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+            placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"
             autoComplete="off"
           />
         </label>
         <div className="field-note">
-          {t(
-            "Copy the OpenAI-compatible Base URL from your Beijing Model Studio workspace, including its real workspace ID. The chat model endpoint is not reused.",
-          )}
+          <span>
+            {t(
+              "Both the Beijing public endpoint and your Beijing workspace-specific compatible-mode/v1 URL are supported. Workspace endpoints are recommended; model access still depends on your API key.",
+            )}
+            <code className="block break-all">
+              https://dashscope.aliyuncs.com/compatible-mode/v1
+            </code>
+          </span>
         </div>
         <label>
           {t("Embedding API key")}{" "}
@@ -182,7 +187,7 @@ export function EmbeddingSettings({
             placeholder={
               settings.embedding_api_key_configured
                 ? t("Leave blank to keep the current embedding key")
-                : t("Enter your Beijing Model Studio workspace API key")
+                : t("Enter your Beijing Model Studio API key")
             }
           />
         </label>
