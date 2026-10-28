@@ -67,7 +67,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Start API
         run: |
-          uv run --no-sync --project apps/api uvicorn personalos.main:app --host 127.0.0.1 --port 8000 > /tmp/personalos-api.log 2>&1 &
+          apps/api/.venv/bin/uvicorn personalos.main:app --host 127.0.0.1 --port 8000 > /tmp/personalos-api.log 2>&1 &
+          echo $! > /tmp/personalos-api.pid
           curl --fail --retry 20 --retry-connrefused --retry-delay 1 --max-time 3 http://127.0.0.1:8000/api/health
       - name: Real browser acceptance
         working-directory: apps/web
@@ -80,3 +81,17 @@ jobs:
             apps/web/playwright-report
             apps/web/test-results
             docs/evidence
+      - name: Stop API before cache cleanup
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os
+          import signal
+          from pathlib import Path
+          path = Path('/tmp/personalos-api.pid')
+          if path.exists():
+              try:
+                  os.kill(int(path.read_text().strip()), signal.SIGTERM)
+              except ProcessLookupError:
+                  pass
+          PY
