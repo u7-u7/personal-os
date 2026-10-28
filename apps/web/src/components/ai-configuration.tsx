@@ -65,7 +65,7 @@ export function AISetupNotice({ full = false }: { full?: boolean }) {
     {
       id: "embedding-configuration",
       title: t("Embedding model"),
-      detail: t("Beijing workspace Base URL · Separate API key"),
+      detail: t("Beijing Base URL · Separate API key"),
       ready: settings.embedding_configured,
       icon: Database,
     },

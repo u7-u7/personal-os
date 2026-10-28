@@ -1,4 +1,27 @@
 export const configurationMessages: Record<string, string> = {
+  "Qwen3.7 Embedding turns text into memory retrieval vectors. Choose the standard or Flash model with an official Beijing endpoint and a separate embedding API key. Chat remains available without embeddings.":
+    "Qwen3.7 Embedding 将文字转换为记忆检索向量，可选择标准版或 Flash，使用官方北京接口与独立 API 密钥。尚未配置不会阻止聊天。",
+  "Choose qwen3.7-text-embedding or qwen3.7-text-embedding-flash":
+    "请选择 qwen3.7-text-embedding 或 qwen3.7-text-embedding-flash。",
+  "qwen3.7-text-embedding supports 2560, 2048, 1536, 1024, 768, 512, 256 dimensions":
+    "qwen3.7-text-embedding 支持 2560、2048、1536、1024、768、512、256 维。",
+  "qwen3.7-text-embedding-flash supports 1024, 768, 512, 256 dimensions":
+    "Flash 模型支持 1024、768、512、256 维。",
+  "Qwen3.7 Embedding requires an official Beijing endpoint":
+    "Qwen3.7 Embedding 需要官方北京接口，可使用公共域名或北京工作空间专属域名。",
+  "Add a Beijing workspace Base URL or the official Beijing public endpoint, and a separate Bailian embedding API key in Settings":
+    "请在设置页填写官方北京接口地址和独立的百炼向量 API 密钥。",
+  "Qwen3.7 Embedding Flash turns text into memory retrieval vectors. Use an official Beijing Model Studio endpoint and a separate embedding API key. Chat remains available without embeddings.":
+    "Qwen3.7 Embedding Flash 将文字转换为记忆检索向量，使用百炼官方北京接口与独立的向量 API 密钥。尚未配置不会阻止聊天。",
+  "Beijing embedding base URL": "北京向量接口地址",
+  "Beijing Base URL · Separate API key": "北京接口地址 · 独立 API 密钥",
+  "Both the Beijing public endpoint and your Beijing workspace-specific compatible-mode/v1 URL are supported. Workspace endpoints are recommended; model access still depends on your API key.":
+    "支持下方北京公共接口，也支持北京工作空间专属的 compatible-mode/v1 地址。推荐使用工作空间专属接口；模型能否调用仍取决于 API 密钥的权限。",
+  "Enter your Beijing Model Studio API key": "填写百炼北京地域的 API 密钥",
+  "Use an official Beijing compatible-mode/v1 Base URL from Model Studio":
+    "请使用百炼官方北京地域的 compatible-mode/v1 接口地址。",
+  "Qwen3.7 Embedding Flash requires an official Beijing endpoint":
+    "Qwen3.7 Embedding Flash 需要官方北京接口：可填写 dashscope.aliyuncs.com 或北京工作空间专属域名。",
   "Provider returned unsupported response compression":
     "供应商未按要求返回未压缩响应，无法安全读取；请检查接口兼容性。",
   "Provider response exceeds the 1 MiB size limit":
@@ -156,7 +179,7 @@ export const configurationMessages: Record<string, string> = {
     "聊天服务未返回文本，请检查模型权限与接口兼容性。",
   "Chat provider returned an invalid response": "聊天服务返回了无效响应。",
   "Add the Beijing workspace Base URL and a separate Bailian embedding API key in Settings":
-    "请在设置页填写北京工作空间接口地址和独立的百炼向量 API 密钥。",
+    "请在设置页填写官方北京接口地址和独立的百炼向量 API 密钥。",
   "Embedding provider timed out or could not be reached; no vectors were saved":
     "向量服务连接超时或不可达，未保存任何向量。",
   "Embedding provider returned an invalid response": "向量服务返回了无效响应。",

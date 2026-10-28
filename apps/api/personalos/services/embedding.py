@@ -16,13 +16,12 @@ import httpx
 from fastapi import HTTPException
 from openai import APIConnectionError, APIResponseValidationError, APIStatusError, APITimeoutError, AsyncOpenAI
 
-from personalos.config import get_settings
+from personalos.config import EMBEDDING_DIMENSIONS_BY_MODEL, get_settings
 from personalos.models import User
 from personalos.security import decrypt_config
 from personalos.services.model import endpoint_key
 
 MODEL = "qwen3.7-text-embedding-flash"
-DIMENSIONS = {1024, 768, 512, 256}
 
 
 @dataclass(frozen=True)
@@ -33,8 +32,11 @@ class EmbeddingConfiguration:
     dimensions: int = 1024
 
     def __post_init__(self):
-        if self.model != MODEL or type(self.dimensions) is not int or self.dimensions not in DIMENSIONS:
-            raise HTTPException(422, "Qwen3.7 Embedding Flash supports 1024, 768, 512 or 256 dimensions")
+        dimensions = EMBEDDING_DIMENSIONS_BY_MODEL.get(self.model)
+        if dimensions is None:
+            raise HTTPException(422, "Choose qwen3.7-text-embedding or qwen3.7-text-embedding-flash")
+        if type(self.dimensions) is not int or self.dimensions not in dimensions:
+            raise HTTPException(422, f"{self.model} supports {', '.join(map(str, dimensions))} dimensions")
 
     @classmethod
     def for_user(cls, user: User):
@@ -102,15 +104,18 @@ async def validate_embedding_url(url: str) -> None:
     if (parsed.scheme != "https" or parsed.username or parsed.password
             or parsed.query or parsed.fragment or "{" in url or "}" in url
             or parsed.path.rstrip("/") != "/compatible-mode/v1" or port not in {None, 443}):
-        raise HTTPException(422, "Use the real Beijing workspace compatible-mode/v1 Base URL from Model Studio")
+        raise HTTPException(422, "Use an official Beijing compatible-mode/v1 Base URL from Model Studio")
     host = parsed.hostname or ""
     # This preset is confirmed in Beijing only. Restrict the credential to its
     # chosen provider instead of forwarding a Bailian key to arbitrary hosts.
     suffix = ".cn-beijing.maas.aliyuncs.com"
     workspace = host.removesuffix(suffix)
-    if not host.endswith(suffix) or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", workspace):
-        raise HTTPException(422, "Qwen3.7 Embedding Flash requires a Beijing workspace endpoint")
-    # This is a single, provider-owned DNS suffix, not arbitrary user URLs.
+    workspace_host = host.endswith(suffix) and re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", workspace)
+    # The legacy Beijing API host remains an official endpoint. Keep it exact
+    # rather than accepting arbitrary DashScope subdomains or overseas regions.
+    if host != "dashscope.aliyuncs.com" and not workspace_host:
+        raise HTTPException(422, "Qwen3.7 Embedding requires an official Beijing endpoint")
+    # These are provider-owned Beijing hosts, not arbitrary user URLs.
     # Save can work offline and behind DNS proxies; the explicit probe performs
     # real DNS/TLS verification. Never accept IPs, userinfo or another provider.
 
@@ -126,7 +131,7 @@ class EmbeddingService:
         if any(len(text.encode("utf-8")) > 128000 for text in texts):
             raise HTTPException(422, "Each text exceeds the application's 128000-byte input bound")
         if not self.config.configured:
-            raise HTTPException(503, "Add the Beijing workspace Base URL and a separate Bailian embedding API key in Settings")
+            raise HTTPException(503, "Add a Beijing workspace Base URL or the official Beijing public endpoint, and a separate Bailian embedding API key in Settings")
         await validate_embedding_url(self.config.base_url)
         try:
             async with asyncio.timeout(20):

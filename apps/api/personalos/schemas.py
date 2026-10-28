@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from personalos.config import EmbeddingDimensions, EmbeddingModel
 
 
 class Credentials(BaseModel):
@@ -104,10 +105,10 @@ class ChatConfigurationInput(BaseModel):
 
 
 class EmbeddingConfigurationInput(BaseModel):
-    embedding_model: Literal["qwen3.7-text-embedding-flash"] | None = None
+    embedding_model: EmbeddingModel | None = None
     embedding_base_url: str | None = Field(default=None, max_length=2000)
     embedding_api_key: str | None = Field(default=None, max_length=1000, repr=False)
-    embedding_dimensions: Literal[1024, 768, 512, 256] | None = None
+    embedding_dimensions: EmbeddingDimensions | None = None
 
     @field_validator("embedding_base_url", "embedding_api_key")
     @classmethod
