@@ -1,0 +1,82 @@
+name: PersonalOS checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: personalos
+          POSTGRES_PASSWORD: personalos
+          POSTGRES_DB: personalos
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd 'pg_isready -U personalos'
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd 'redis-cli ping'
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql+psycopg://personalos:personalos@127.0.0.1:5432/personalos
+      TEST_DATABASE_URL: postgresql+psycopg://personalos:personalos@127.0.0.1:5432/personalos
+      REDIS_URL: redis://127.0.0.1:6379/0
+      WEB_ORIGIN: http://localhost:3000
+      APP_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.9.18'
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Generate ephemeral encryption key
+        run: uv run --with cryptography python -c 'from cryptography.fernet import Fernet; import os; open(os.environ["GITHUB_ENV"], "a").write("ENCRYPTION_KEY=" + Fernet.generate_key().decode() + "\n")'
+      - name: Validate Compose configuration
+        run: python3 scripts/bootstrap.py && docker compose config --quiet
+      - name: Install Python dependencies
+        run: uv sync --project apps/api --frozen --extra dev --extra jev
+      - name: API lint
+        run: uv run --no-sync --project apps/api ruff check apps/api/personalos apps/api/tests
+      - name: Migrate PostgreSQL
+        working-directory: apps/api
+        run: uv run --no-sync alembic upgrade head
+      - name: Backend and PostgreSQL concurrency checks
+        run: uv run --no-sync --project apps/api --extra jev pytest apps/api/tests -q
+      - name: Install Web dependencies
+        run: npm ci --prefix apps/web
+      - name: Typecheck and lint
+        working-directory: apps/web
+        run: npm run typecheck && npm run lint
+      - name: Build Web
+        run: npm run build --prefix apps/web
+      - name: Install browser
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+      - name: Start API
+        run: |
+          uv run --no-sync --project apps/api uvicorn personalos.main:app --host 127.0.0.1 --port 8000 > /tmp/personalos-api.log 2>&1 &
+          curl --fail --retry 20 --retry-connrefused --retry-delay 1 --max-time 3 http://127.0.0.1:8000/api/health
+      - name: Real browser acceptance
+        working-directory: apps/web
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-evidence
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+            docs/evidence
