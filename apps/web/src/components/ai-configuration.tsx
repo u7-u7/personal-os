@@ -12,6 +12,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import type { Settings } from "@/lib/api";
+import { useI18n } from "@/components/i18n-provider";
 
 export const AIConfigurationContext = createContext<UseQueryResult<
   Settings,
@@ -26,21 +27,28 @@ export function useAIConfiguration() {
 }
 
 export function AISetupNotice({ full = false }: { full?: boolean }) {
+  const { t, errorText } = useI18n();
   const configuration = useAIConfiguration();
   if (configuration.isPending)
     return (
       <div className="ai-configuration-status" role="status">
-        <LoaderCircle size={15} className="spin" /> 正在读取你的 AI 配置…
+        <LoaderCircle size={15} className="spin" />{" "}
+        {t("Loading your AI settings…")}
       </div>
     );
   if (configuration.error)
     return (
       <div className="error-banner" role="alert">
         <span>
-          无法读取 AI 配置，AI 功能暂不可用。{configuration.error.message}
+          {t(
+            "Unable to load AI settings. AI features are temporarily unavailable. {error}",
+            {
+              error: errorText(configuration.error.message),
+            },
+          )}
         </span>
         <button onClick={() => void configuration.refetch()}>
-          重新读取 <RefreshCw size={13} />
+          {t("Reload settings")} <RefreshCw size={13} />
         </button>
       </div>
     );
@@ -49,15 +57,15 @@ export function AISetupNotice({ full = false }: { full?: boolean }) {
   const steps = [
     {
       id: "chat-configuration",
-      title: "聊天模型",
-      detail: "Model ID · Base URL · API Key",
+      title: t("Chat model"),
+      detail: t("Model ID · Base URL · API Key"),
       ready: settings.chat_configured,
       icon: Bot,
     },
     {
       id: "embedding-configuration",
-      title: "向量模型",
-      detail: "北京工作空间 Base URL · 独立 API Key",
+      title: t("Embedding model"),
+      detail: t("Beijing workspace Base URL · Separate API key"),
       ready: settings.embedding_configured,
       icon: Database,
     },
@@ -68,15 +76,16 @@ export function AISetupNotice({ full = false }: { full?: boolean }) {
       aria-labelledby="ai-setup-heading"
     >
       <div className="ai-setup-intro">
-        <span className="eyebrow">YOUR AI, CONNECTED BY YOU</span>
+        <span className="eyebrow">{t("YOUR AI, CONNECTED BY YOU")}</span>
         <h2 id="ai-setup-heading">
           {settings.ai_setup_complete
-            ? "AI 配置已填写"
-            : "连接你的 AI，先完成这两步"}
+            ? t("AI configuration entered")
+            : t("Connect your AI in two steps")}
         </h2>
         <p>
-          聊天和 AI
-          简报需要聊天模型；向量模型用于记忆检索。任务、日历和手动记忆管理可直接使用。
+          {t(
+            "Chat and AI briefings need a chat model; embeddings support memory retrieval. Tasks, calendar and manual memory management are ready to use.",
+          )}
         </p>
       </div>
       <div className="ai-setup-steps">
@@ -92,7 +101,7 @@ export function AISetupNotice({ full = false }: { full?: boolean }) {
             <div>
               <strong>
                 <Icon size={15} /> {title}
-                <span>{ready ? "已填写" : "待配置"}</span>
+                <span>{ready ? t("Entered") : t("Not configured")}</span>
               </strong>
               <small>{detail}</small>
             </div>
@@ -102,8 +111,9 @@ export function AISetupNotice({ full = false }: { full?: boolean }) {
       </div>
       {full && (
         <p className="ai-setup-footnote">
-          可以分步保存。保存仅代表配置已存储；请分别点击「测试已保存连接」验证真实可用性。向量模型配置不会自动开启
-          Hy-Memory 索引。
+          {t(
+            "Save each step when ready, then test each saved connection to verify it. Saving embedding settings does not enable Hy-Memory indexing.",
+          )}
         </p>
       )}
     </section>

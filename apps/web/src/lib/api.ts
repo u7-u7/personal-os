@@ -93,11 +93,20 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     try {
       const body = await response.json();
       message =
-        typeof body.detail === "string"
-          ? body.detail
-          : typeof body.detail?.message === "string"
-            ? body.detail.message
-            : JSON.stringify(body.detail || body.error || body);
+        Array.isArray(body.detail) &&
+        body.detail.every(
+          (issue: unknown) =>
+            typeof issue === "object" &&
+            issue !== null &&
+            "msg" in issue &&
+            typeof issue.msg === "string",
+        )
+          ? body.detail.map((issue: { msg: string }) => issue.msg).join("\n")
+          : typeof body.detail === "string"
+            ? body.detail
+            : typeof body.detail?.message === "string"
+              ? body.detail.message
+              : JSON.stringify(body.detail || body.error || body);
     } catch {
       /* Non-JSON upstream failures still preserve the status. */
     }
@@ -110,19 +119,20 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 export function dateLabel(
   value?: string | null,
   options?: Intl.DateTimeFormatOptions,
+  locale?: string,
 ) {
   if (!value) return "No date";
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? value
     : date.toLocaleDateString(
-        undefined,
+        locale,
         options || { month: "short", day: "numeric" },
       );
 }
-export function timeLabel(value?: string) {
+export function timeLabel(value?: string, locale?: string) {
   return value
-    ? new Date(value).toLocaleTimeString([], {
+    ? new Date(value).toLocaleTimeString(locale, {
         hour: "2-digit",
         minute: "2-digit",
       })

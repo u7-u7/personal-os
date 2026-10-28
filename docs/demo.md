@@ -1,6 +1,6 @@
 # Demonstration script
 
-1. Start the stack following the README. Open `/dashboard`; register an account with a unique email and a password of at least ten characters. Empty state is expected.
+1. Start the stack following the README. Open `/dashboard`; the interface follows your system/browser language. Register an account with a unique email and a password of at least eight characters. Empty state is expected. Switch between English, 简体中文 and Follow system on the sign-in page or in Settings.
 2. In Tasks create “Review PersonalOS architecture”, high priority, with a real deadline. Complete it; refresh and confirm persistence.
 3. In Memory add a real preference as pending. Confirm it; edit its source/content; verify edits require confirmation. Request deletion and approve in Activity.
 4. In Calendar create a local event. Attempt an overlap and show the conflict error. Google remains unconnected until OAuth credentials and consent exist.

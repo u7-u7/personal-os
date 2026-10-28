@@ -1,5 +1,16 @@
 # PersonalOS verification report · 2026-10-28
 
+## System language and eight-character passwords · 2026-10-28
+
+The interface now defaults to `system` and supports Simplified Chinese/English. The server resolves the browser's `Accept-Language` plus a validated preference cookie; the client observes `navigator.languages`, `languagechange` and explicit choices. Login and Settings share a persistent language selector. Explicit dictionaries cover the nine pages, configuration screens, accessibility labels, statuses, prompts, known errors and locale-aware dates. User content, model output, model IDs, API enum values and tool arguments remain original. No table/migration or external translation service was added.
+
+- Existing backend tests: **51 passed (7.35s), no skips**; Ruff passed. Existing full real-runtime Playwright E2E: **1 passed (19.5s)**. No test case files were added or modified.
+- Web TypeScript, ESLint and isolated production build passed. Dynamic rendering of the layout is intentional, so the initial language is resolved for each request.
+- Manual SSR requests confirmed Chinese/English selection, unsupported-language English fallback, explicit English override over a Chinese preference, and exclusion of `q=0` languages. Both `<html lang>` and the document title matched.
+- Real browser: Chinese system preference rendered the workspace in Chinese; manual English changed text/accessibility labels immediately and survived reload; switching back to system restored Chinese. The original user name and model IDs remained unchanged. At 390px, document width remained 390px; the viewport override was reset afterwards. Desktop and mobile evidence: `docs/evidence/language-*.png`.
+- Disposable QA account: seven-character registration returned 422 without input/context echo; eight-character registration returned 201 and login returned 200 with a matching authenticated account. Existing user passwords were not changed. Credentials remain hashed and rate limiting is unchanged.
+- Static translation review found no untranslated fixed JSX text or missing literal translation keys in the workspace/configuration components. Unknown provider diagnostics remain visible in their original text; configuring a language does not claim successful external model/Calendar/Hy/Jev acceptance.
+
 Status: runnable development candidate, **not a completed credentialed external-service acceptance**. Full original scope remains in the PRD and seven-day plan. Local test fixtures are identified below and are never product responses.
 
 ## Verified facts

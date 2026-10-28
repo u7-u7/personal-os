@@ -19,6 +19,8 @@ Open [PersonalOS](http://localhost:3000/dashboard) and register an account. API 
 
 ## Local development
 
+The interface defaults to the browser/system's preferred language, with Simplified Chinese and English supported; other language preferences fall back to English. Use the language selector on the sign-in page or in Settings to override it or return to **Follow system**. The choice is device/browser-level, persists across reloads, and applies to text, accessibility labels and date formatting; user content and model output are never translated automatically. The server uses `Accept-Language` and the preference cookie for a matching first render. Registration and login accept passwords of **8–256 characters**; existing passwords are unchanged.
+
 Requirements: Python 3.12, uv, Node.js 24, PostgreSQL 17 and Redis 7.
 
 ```sh

@@ -36,6 +36,7 @@ import {
   AISetupNotice,
 } from "@/components/ai-configuration";
 import { Button } from "@/components/ui/button";
+import { useI18n, LanguageSelector } from "@/components/i18n-provider";
 import {
   ActivityPage,
   AutomationsPage,
@@ -58,6 +59,7 @@ const navigation = [
   { id: "activity", label: "Activity & approvals", icon: Activity },
 ];
 export function Workspace({ section }: { section: string }) {
+  const { t } = useI18n();
   const client = useQueryClient();
   const user = useQuery({
     queryKey: ["me"],
@@ -121,7 +123,7 @@ export function Workspace({ section }: { section: string }) {
         <span className="brand-mark">
           <Command size={22} />
         </span>
-        <p>Making a little headspace…</p>
+        <p>{t("Making a little headspace\u2026")}</p>
         <span className="loading-line" />
       </div>
     );
@@ -147,7 +149,7 @@ export function Workspace({ section }: { section: string }) {
             </span>
             <span>
               Personal<span className="brand-os">OS</span>
-              <small>A little more headspace.</small>
+              <small>{t("A little more headspace.")}</small>
             </span>
           </Link>
           <div className="workspace-picker">
@@ -155,11 +157,12 @@ export function Workspace({ section }: { section: string }) {
               {(me.name || me.email)[0].toUpperCase()}
             </span>
             <span>
-              My workspace<small>Personal space</small>
+              {t("My workspace")}
+              <small>{t("Personal space")}</small>
             </span>
             <ChevronDown size={15} />
           </div>
-          <div className="nav-caption">YOUR WORKSPACE</div>
+          <div className="nav-caption">{t("YOUR WORKSPACE")}</div>
           <nav>
             {navigation.map(({ id, label, icon: Icon }, i) => (
               <Link
@@ -170,7 +173,7 @@ export function Workspace({ section }: { section: string }) {
                 aria-current={section === id ? "page" : undefined}
               >
                 <Icon size={18} strokeWidth={1.7} />
-                <span>{label}</span>
+                <span>{t(label)}</span>
                 {i === 1 && <span className="nav-new">AI</span>}
                 {section === id && <span className="nav-dot" />}
               </Link>
@@ -179,10 +182,13 @@ export function Workspace({ section }: { section: string }) {
           <div className="sidebar-bottom">
             <div className="privacy-note">
               <ShieldCheck size={19} />
-              <strong>Yours, by design.</strong>
-              <p>You choose what your AI remembers and what it can do.</p>
+              <strong>{t("Yours, by design.")}</strong>
+              <p>
+                {t("You choose what your AI remembers and what it can do.")}
+              </p>
               <Link href="/settings">
-                Privacy & control <ArrowUpRight size={13} />
+                {t("Privacy & control")}
+                <ArrowUpRight size={13} />
               </Link>
             </div>
             <Link
@@ -190,25 +196,25 @@ export function Workspace({ section }: { section: string }) {
               href="/settings"
             >
               <Settings2 size={18} />
-              <span>Settings</span>
+              <span>{t("Settings")}</span>
             </Link>
             <button className="nav-item" onClick={() => setHelp(!help)}>
               <CircleHelp size={18} />
-              <span>How it works</span>
+              <span>{t("How it works")}</span>
             </button>
             <button
               className="profile"
               onClick={() => {
                 void logout();
               }}
-              aria-label="Sign out"
+              aria-label={t("Sign out")}
             >
               <span className="user-avatar">
                 {(me.name || me.email)[0].toUpperCase()}
               </span>
               <span>
                 {me.name || me.email.split("@")[0]}
-                <small>Personal account</small>
+                <small>{t("Personal account")}</small>
               </span>
               <LogOut size={15} />
             </button>
@@ -217,7 +223,7 @@ export function Workspace({ section }: { section: string }) {
         {mobile && (
           <button
             className="mobile-overlay"
-            aria-label="Close menu"
+            aria-label={t("Close menu")}
             onClick={() => setMobile(false)}
           />
         )}
@@ -226,17 +232,19 @@ export function Workspace({ section }: { section: string }) {
             <div className="breadcrumb">
               <button
                 className="icon-button mobile-menu"
-                aria-label="Open menu"
+                aria-label={t("Open menu")}
                 onClick={() => setMobile(!mobile)}
               >
                 <Menu size={21} />
               </button>
-              <span>My workspace</span>
+              <span>{t("My workspace")}</span>
               <span className="breadcrumb-slash">/</span>
               <strong>
-                {section === "settings"
-                  ? "Settings"
-                  : navigation.find((n) => n.id === section)?.label}
+                {t(
+                  section === "settings"
+                    ? "Settings"
+                    : navigation.find((n) => n.id === section)?.label || "",
+                )}
               </strong>
             </div>
             <div className="topbar-actions">
@@ -246,21 +254,23 @@ export function Workspace({ section }: { section: string }) {
                   name="q"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search your memory…"
-                  aria-label="Search your memory"
+                  placeholder={t("Search your memory\u2026")}
+                  aria-label={t("Search your memory")}
                 />
                 <kbd>↵</kbd>
               </form>
               <button
                 className="icon-button"
                 onClick={toggleTheme}
-                aria-label={dark ? "Use light theme" : "Use dark theme"}
+                aria-label={dark ? t("Use light theme") : t("Use dark theme")}
               >
                 {dark ? <Sun size={18} /> : <Moon size={18} />}
               </button>
               <span className="topbar-divider" />
               <Link className="assistant-shortcut" href="/chat">
-                <Sparkles size={15} /> Ask PersonalOS <span>↗</span>
+                <Sparkles size={15} />
+                {t("Ask PersonalOS")}
+                <span>↗</span>
               </Link>
             </div>
           </header>
@@ -278,10 +288,12 @@ export function Workspace({ section }: { section: string }) {
           </main>
           <footer className="workspace-footer">
             <span>
-              <span className="tiny-dot" /> PRIVATE WORKSPACE
+              <span className="tiny-dot" />
+              {t("PRIVATE WORKSPACE")}
             </span>
             <span>
-              Less busywork. More room for you. <Feather size={12} />
+              {t("Less busywork. More room for you.")}
+              <Feather size={12} />
             </span>
           </footer>
         </div>
@@ -295,51 +307,56 @@ export function Workspace({ section }: { section: string }) {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="modal-head">
-                <h2 id="help-heading">A thoughtful second brain.</h2>
+                <h2 id="help-heading">{t("A thoughtful second brain.")}</h2>
                 <button
                   className="icon-button"
-                  aria-label="Close"
+                  aria-label={t("Close")}
                   onClick={() => setHelp(false)}
                 >
                   <X size={20} />
                 </button>
               </div>
               <p>
-                PersonalOS brings your tasks, calendar, memories and automations
-                into one private workspace.
+                {t(
+                  "PersonalOS brings your tasks, calendar, memories and automations into one private workspace.",
+                )}
               </p>
               <div className="help-step">
                 <Brain size={22} />
                 <div>
-                  <strong>Memory you control</strong>
+                  <strong>{t("Memory you control")}</strong>
                   <p>
-                    Review suggestions before they become long-term memories.
-                    Edit, export or delete them whenever you like.
+                    {t(
+                      "Review suggestions before they become long-term memories. Edit, export or delete them whenever you like.",
+                    )}
                   </p>
                 </div>
               </div>
               <div className="help-step">
                 <Bot size={22} />
                 <div>
-                  <strong>Actions with your permission</strong>
+                  <strong>{t("Actions with your permission")}</strong>
                   <p>
-                    External changes wait for approval. Review their exact
-                    parameters in Activity & approvals.
+                    {t(
+                      "External changes wait for approval. Review their exact parameters in Activity & approvals.",
+                    )}
                   </p>
                 </div>
               </div>
               <div className="help-step">
                 <Network size={22} />
                 <div>
-                  <strong>Connect on your terms</strong>
+                  <strong>{t("Connect on your terms")}</strong>
                   <p>
-                    Configure a model and authorize a calendar or trusted MCP
-                    server to enable connected capabilities.
+                    {t(
+                      "Configure a model and authorize a calendar or trusted MCP server to enable connected capabilities.",
+                    )}
                   </p>
                 </div>
               </div>
               <Button onClick={() => setHelp(false)}>
-                Got it <Check size={16} />
+                {t("Got it")}
+                <Check size={16} />
               </Button>
             </section>
           </div>
@@ -355,6 +372,7 @@ function AuthScreen({
   error?: string;
   onDone: () => Promise<void>;
 }) {
+  const { t, errorText } = useI18n();
   const [register, setRegister] = useState(false);
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState<string>();
@@ -374,7 +392,7 @@ function AuthScreen({
       });
       await onDone();
     } catch (err) {
-      setFailure(err instanceof Error ? err.message : "Could not sign in");
+      setFailure(err instanceof Error ? err.message : t("Could not sign in"));
     } finally {
       setPending(false);
     }
@@ -389,18 +407,18 @@ function AuthScreen({
           <span>PersonalOS</span>
         </Link>
         <div className="auth-editorial">
-          <span className="eyebrow">YOUR LIFE. A LITTLE LIGHTER.</span>
+          <span className="eyebrow">{t("YOUR LIFE. A LITTLE LIGHTER.")}</span>
           <h1>
-            Make room
+            {t("Make room")}
             <br />
-            for what
+            {t("for what")}
             <br />
-            <em>matters.</em>
+            <em>{t("matters.")}</em>
           </h1>
           <p>
-            A private, thoughtful AI workspace.
+            {t("A private, thoughtful AI workspace.")}
             <br />
-            For your plans, your ideas, and everything in between.
+            {t("For your plans, your ideas, and everything in between.")}
           </p>
           <div className="auth-orbit">
             <Compass size={94} strokeWidth={0.7} />
@@ -409,20 +427,24 @@ function AuthScreen({
           </div>
         </div>
         <small>
-          <ShieldCheck size={14} /> Your memories. Your permissions. Your
-          control.
+          <ShieldCheck size={14} />
+          {t("Your memories. Your permissions. Your control.")}
         </small>
       </div>
       <div className="auth-form-wrap">
         <div className="auth-form">
+          <LanguageSelector className="auth-language-selector" />
           <span className="eyebrow">
-            <AudioLines size={15} /> A LITTLE MORE HEADSPACE
+            <AudioLines size={15} />
+            {t("A LITTLE MORE HEADSPACE")}
           </span>
-          <h2>{register ? "Your space starts here." : "Welcome back."}</h2>
+          <h2>
+            {register ? t("Your space starts here.") : t("Welcome back.")}
+          </h2>
           <p>
             {register
-              ? "Create your private PersonalOS account."
-              : "A fresh perspective on the day ahead."}
+              ? t("Create your private PersonalOS account.")
+              : t("A fresh perspective on the day ahead.")}
           </p>
           <form
             onSubmit={(e) => {
@@ -431,17 +453,17 @@ function AuthScreen({
           >
             {register && (
               <label>
-                Your name
+                {t("Your name")}
                 <input
                   name="name"
-                  placeholder="What should we call you?"
+                  placeholder={t("What should we call you?")}
                   autoComplete="name"
                   required
                 />
               </label>
             )}
             <label>
-              Email address
+              {t("Email address")}
               <input
                 type="email"
                 name="email"
@@ -451,49 +473,49 @@ function AuthScreen({
               />
             </label>
             <label>
-              Password
+              {t("Password")}
               <input
                 type="password"
                 name="password"
                 placeholder={
-                  register ? "At least 12 characters" : "Your password"
+                  register ? t("At least 8 characters") : t("Your password")
                 }
-                minLength={register ? 12 : 1}
+                minLength={register ? 8 : 1}
                 autoComplete={register ? "new-password" : "current-password"}
                 required
               />
             </label>
             {(failure || error) && (
               <div className="error-banner" role="alert">
-                {failure || error}
+                {errorText(failure || error || "")}
               </div>
             )}
             <Button type="submit" disabled={pending}>
               {pending
-                ? "One moment…"
+                ? t("One moment\u2026")
                 : register
-                  ? "Create your workspace"
-                  : "Enter your workspace"}
+                  ? t("Create your workspace")
+                  : t("Enter your workspace")}
               <ArrowUpRight size={17} />
             </Button>
           </form>
           <div className="auth-switch">
-            {register ? "Already have a space?" : "New to PersonalOS?"}{" "}
+            {register ? t("Already have a space?") : t("New to PersonalOS?")}{" "}
             <button
               onClick={() => {
                 setRegister(!register);
                 setFailure(undefined);
               }}
             >
-              {register ? "Sign in" : "Create an account"}
+              {register ? t("Sign in") : t("Create an account")}
             </button>
           </div>
           <div className="auth-detail">
             <ShieldCheck size={16} />
             <p>
-              Nothing is remembered without your say.
+              {t("Nothing is remembered without your say.")}
               <br />
-              Connected actions always respect your permissions.
+              {t("Connected actions always respect your permissions.")}
             </p>
           </div>
         </div>
