@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,6 +18,10 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4.1-mini"
+    embedding_model: Literal["qwen3.7-text-embedding-flash"] = "qwen3.7-text-embedding-flash"
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
+    embedding_dimensions: Literal[1024, 768, 512, 256] = 1024
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:3000/api/calendar/oauth/callback"

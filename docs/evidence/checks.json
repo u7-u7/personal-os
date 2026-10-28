@@ -1,14 +1,14 @@
 {
   "python": {
-    "passed": 43,
+    "passed": 50,
     "skipped": 0,
-    "seconds": 5.18,
+    "seconds": 5.03,
     "real_postgres": true,
     "model_http_protocol_fixture": true,
     "external_model_acceptance": false
   },
-  "api_image": "sha256:c84fe30d996799ae134bdf027c3d5885169d010d8b5d6783d7e93c6eb9e58e37",
-  "web_image": "sha256:cdd9b4391e15fc3e7f347f2f6e38e735df86468e2c4b4af8913b657606b1b024",
+  "api_image": "sha256:1fb1ecf9d7a2755524d818634f163c0a730bd932757044e9aca37343048fb05c",
+  "web_image": "sha256:5aa064b18444fb3fa82e1a9c08cf27befb3389a03c44b7bb64f2422fb30cc42f",
   "external_gates": [
     "model credentials",
     "Google OAuth consent",
@@ -18,7 +18,7 @@
   ],
   "compose_browser": {
     "passed": 1,
-    "seconds": 17.3,
+    "seconds": 18.6,
     "base_url": "http://localhost:3300",
     "services": [
       "PostgreSQL17",
@@ -28,5 +28,20 @@
       "Next.js"
     ],
     "topic_filter_in_running_openapi": true
+  },
+  "qwen_embedding": {
+    "model": "qwen3.7-text-embedding-flash",
+    "region": "cn-beijing",
+    "dimensions": 1024,
+    "python_passed": 50,
+    "python_seconds": 5.03,
+    "sdk_http_fixtures": true,
+    "live_provider_verified": false,
+    "authorization": "User will enter workspace URL and key in Settings later",
+    "hy_index_enabled": false,
+    "api_image": "sha256:1fb1ecf9d7a2755524d818634f163c0a730bd932757044e9aca37343048fb05c",
+    "web_image": "sha256:5aa064b18444fb3fa82e1a9c08cf27befb3389a03c44b7bb64f2422fb30cc42f",
+    "docker_e2e_passed": 1,
+    "docker_e2e_seconds": 18.6
   }
 }

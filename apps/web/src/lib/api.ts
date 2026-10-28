@@ -41,15 +41,27 @@ export interface User {
   name?: string;
 }
 export interface Settings {
+  version: number;
   model?: string;
   fast_model?: string;
   reasoning_model?: string;
   decision_provider?: "rules" | "llm" | "jev";
   base_url?: string;
   api_key_configured?: boolean;
+  embedding_model?: string;
+  embedding_base_url?: string;
+  embedding_dimensions?: number;
+  embedding_api_key_configured?: boolean;
   memory_enabled?: boolean;
   timezone?: string;
   [key: string]: unknown;
+}
+export interface EmbeddingConnectionCheck {
+  status: "ok";
+  model: string;
+  dimensions: number;
+  provider: "dashscope";
+  settings_version: number;
 }
 export class ApiError extends Error {
   constructor(

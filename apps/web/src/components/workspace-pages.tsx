@@ -52,6 +52,7 @@ import {
   type User,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { EmbeddingSettings } from "@/components/embedding-settings";
 
 const resourcePaths: Record<string, string> = {
   tasks: "/tasks",
@@ -1949,9 +1950,11 @@ export function SettingsPage({ user }: { user: User }) {
   });
   const action = useAction();
   const [saved, setSaved] = useState(false);
+  const [embeddingTesting, setEmbeddingTesting] = useState(false);
   const settingsForm = useRef<HTMLFormElement>(null);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (embeddingTesting) return;
     const formElement = event.currentTarget;
     const data = new FormData(formElement);
     setSaved(false);
@@ -1959,12 +1962,21 @@ export function SettingsPage({ user }: { user: User }) {
       name: data.get("name"),
       model: data.get("model"),
       decision_provider: data.get("decision_provider"),
-      base_url: data.get("base_url"),
       timezone: data.get("timezone"),
       memory_enabled: data.get("memory_enabled") === "on",
+      embedding_model: data.get("embedding_model"),
+      embedding_dimensions: Number(data.get("embedding_dimensions") || 1024),
       version: query.data?.version,
     };
+    for (const field of ["base_url", "embedding_base_url"] as const) {
+      const value = String(data.get(field) || "").trim();
+      // Unchanged providers need no new network validation when saving preferences.
+      if (value !== String(query.data?.[field] || "").trim())
+        payload[field] = value;
+    }
     if (data.get("api_key")) payload.api_key = data.get("api_key");
+    if (data.get("embedding_api_key"))
+      payload.embedding_api_key = data.get("embedding_api_key");
     for (const field of ["fast_model", "reasoning_model"]) {
       const value = String(data.get(field) || "").trim();
       if (value) payload[field] = value;
@@ -1976,6 +1988,10 @@ export function SettingsPage({ user }: { user: User }) {
       setSaved(true);
       const keyInput = formElement.elements.namedItem("api_key");
       if (keyInput instanceof HTMLInputElement) keyInput.value = "";
+      const embeddingKeyInput =
+        formElement.elements.namedItem("embedding_api_key");
+      if (embeddingKeyInput instanceof HTMLInputElement)
+        embeddingKeyInput.value = "";
     }
   }
   return (
@@ -2160,6 +2176,24 @@ export function SettingsPage({ user }: { user: User }) {
                   </Button>
                 )}
               </section>
+              <EmbeddingSettings
+                settings={query.data}
+                pending={action.pending}
+                onTestPendingChange={setEmbeddingTesting}
+                onChange={() => setSaved(false)}
+                onRemoveKey={async () => {
+                  setSaved(false);
+                  return action.run(() =>
+                    api("/settings", {
+                      method: "PATCH",
+                      body: JSON.stringify({
+                        embedding_api_key: "",
+                        version: query.data?.version,
+                      }),
+                    }),
+                  );
+                }}
+              />
               <section className="panel settings-section">
                 <div className="settings-section-heading">
                   <span className="small-icon">
@@ -2217,7 +2251,10 @@ export function SettingsPage({ user }: { user: User }) {
                     ? "Changes saved"
                     : "Changes apply to your account only."}
                 </span>
-                <Button type="submit" disabled={action.pending}>
+                <Button
+                  type="submit"
+                  disabled={action.pending || embeddingTesting}
+                >
                   {action.pending ? (
                     <LoaderCircle className="spin" size={15} />
                   ) : (

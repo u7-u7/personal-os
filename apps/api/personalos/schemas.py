@@ -93,6 +93,10 @@ class ApprovalInput(BaseModel):
 
 
 class SettingsInput(BaseModel):
+    embedding_model: Literal["qwen3.7-text-embedding-flash"] | None = None
+    embedding_base_url: str | None = Field(default=None, max_length=2000)
+    embedding_api_key: str | None = Field(default=None, max_length=1000)
+    embedding_dimensions: Literal[1024, 768, 512, 256] | None = None
     fast_model: str | None = Field(default=None, max_length=100)
     reasoning_model: str | None = Field(default=None, max_length=100)
     decision_provider: Literal["rules", "llm", "jev"] | None = None

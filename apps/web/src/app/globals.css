@@ -1917,6 +1917,12 @@ small {
   padding: 25px;
   margin-bottom: 22px;
 }
+.embedding-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
 .settings-section-heading {
   display: flex;
   gap: 13px;

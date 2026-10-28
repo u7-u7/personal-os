@@ -254,6 +254,26 @@ test("real workspace: account, task, memory consent, approval and model boundary
   const settingsBeforePreset = await (
     await page.request.get("/api/settings")
   ).json();
+  await expect(
+    page.getByLabel("Embedding model ID", { exact: true }),
+  ).toHaveValue("qwen3.7-text-embedding-flash");
+  await expect(page.getByLabel("Vector dimensions")).toHaveValue("1024");
+  await expect(page.locator('input[name="embedding_api_key"]')).toHaveAttribute(
+    "type",
+    "password",
+  );
+  const missingEmbedding = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/settings/embedding/test") &&
+      response.request().method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "Test saved embedding connection" })
+    .click();
+  expect((await missingEmbedding).status()).toBe(503);
+  await expect(page.locator("main").getByRole("alert")).toContainText(
+    "Beijing workspace Base URL",
+  );
   await page.getByRole("button", { name: /DeepSeek/ }).click();
   await expect(page.getByLabel("Model ID", { exact: true })).toHaveValue(
     "deepseek-flash",

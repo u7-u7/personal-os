@@ -435,9 +435,12 @@ def activity(user: Viewer, db: DB):
 
 @app.get("/api/settings")
 def settings(user: Viewer):
+    from personalos.services.embedding import EmbeddingConfiguration
+
     private = decrypt_config(user.secret_config)
     config = get_settings()
-    return {"name": user.name, "email": user.email, "model": user.preferences.get("model", config.openai_model),
+    return {**EmbeddingConfiguration.for_user(user).public_settings(),
+            "name": user.name, "email": user.email, "model": user.preferences.get("model", config.openai_model),
             "base_url": private.get("base_url", config.openai_base_url), "api_key_configured": bool(private.get("api_key") or config.openai_api_key),
             "memory_enabled": user.preferences.get("memory_enabled", True), "theme": user.preferences.get("theme", "system"),
             "timezone": user.preferences.get("timezone", "Asia/Shanghai"), "version": user.version,
@@ -449,12 +452,18 @@ def settings(user: Viewer):
 
 @app.patch("/api/settings")
 async def update_settings(payload: SettingsInput, user: Viewer, db: DB):
+    from personalos.services.embedding import validate_embedding_url
+
     changes = payload.model_dump(exclude_none=True, exclude={"version"})
     private = decrypt_config(user.secret_config)
     if "base_url" in changes:
         await validate_public_url(changes["base_url"])
-    for key in {"api_key", "base_url"} & changes.keys():
+    if changes.get("embedding_base_url"):
+        await validate_embedding_url(changes["embedding_base_url"])
+    for key in {"api_key", "base_url", "embedding_api_key", "embedding_base_url"} & changes.keys():
         private[key] = changes.pop(key)
+    if private.get("embedding_api_key") and not private.get("embedding_base_url", get_settings().embedding_base_url):
+        raise HTTPException(422, "Fill the Beijing workspace Embedding Base URL before saving its API key")
     encrypted = encrypt_config(private) if private else None
     name = changes.pop("name", user.name)
     assert_account_writable(db, user.id)
@@ -468,6 +477,25 @@ async def update_settings(payload: SettingsInput, user: Viewer, db: DB):
     db.commit()
     db.refresh(user)
     return settings(user)
+
+
+@app.post("/api/settings/embedding/test")
+async def test_embedding_connection(user: Viewer, db: DB):
+    from personalos.services.embedding import EmbeddingConfiguration, EmbeddingService
+
+    with account_lease(db, user.id):
+        configuration = EmbeddingConfiguration.for_user(user)
+        details = {"model": configuration.model, "dimensions": configuration.dimensions,
+                   "settings_version": user.version}
+        try:
+            result = await EmbeddingService(configuration).test_connection()
+        except HTTPException as exc:
+            audit(db, user.id, "embedding.connection_test", details={**details, "http_status": exc.status_code}, status="failed")
+            db.commit()
+            raise
+        audit(db, user.id, "embedding.connection_test", details=details)
+        db.commit()
+        return {**result, "settings_version": user.version}
 
 
 @app.get("/api/export")

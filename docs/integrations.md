@@ -55,3 +55,15 @@ DeepSeek's [official Chat Completions reference](https://api-docs.deepseek.com/a
 This lets one DeepSeek configuration serve both conversation generation and routing judgments when explicitly selected. Hy Memory can also use an OpenAI-compatible DeepSeek LLM endpoint for extraction/reconciliation, but still needs a separately authorized embedding model endpoint. Jev remains an optional specialized provider. None of these external services has passed credentialed live acceptance in this run.
 
 The 19 provider checks include successful ordinary-LLM JSON serialization/parsing, invalid route rejection, unknown memory ID rejection, forbidden authorization field rejection and truncated response rejection. All HTTP response fixtures are explicitly test-only; these checks do not claim a live DeepSeek inference.
+
+## Selected embedding: Qwen3.7 Embedding Flash (Beijing)
+
+User selected `qwen3.7-text-embedding-flash` on 2026-10-28 and will enter the Base URL and key later. The official [synchronous API specification](https://help.aliyun.com/zh/model-studio/text-embedding-synchronous-api) lists Beijing, dimensions **1024 (default), 768, 512, 256**, and batches up to 20 texts. Use `https://WORKSPACE-ID.cn-beijing.maas.aliyuncs.com/compatible-mode/v1` with the actual workspace ID; API keys are region-specific. Singapore Flash availability was not established and is not offered by this preset.
+
+The server uses the official OpenAI SDK embeddings API with explicit dimensions, float encoding, timeout and no automatic retries. A saved-configuration probe sends only a fixed nonprivate string. Responses must match batch indices, dimensions and finite values; the UI never receives vectors or keys. Invalid/unsupported endpoints fail before credentials are sent. Settings use existing encrypted user configuration and optimistic versions; no table is added.
+
+Optional `EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS`, `EMBEDDING_BASE_URL` and `EMBEDDING_API_KEY` provide server defaults; per-user settings are independent. Explicitly clearing a user's embedding key also disables an administrator fallback for that user.
+
+`EmbeddingConfiguration.hy_index_configuration` builds official Hy embedder/vector-store fields with matching dimensions and owner/model/endpoint-specific vector, graph, cache and history paths. Changing vector space requires a new index/rebuild, including when dimensions happen to match. The bridge **does not start Hy indexing**. Hy's own batching/truncation/cache and full data-plane acceptance remain deferred.
+
+Seven new tests cover actual SDK protocol fixtures, encrypted key isolation/export exclusion/clear, saved-version receipts, bad provider vectors, endpoint restrictions and isolated index configuration. They are not a live Bailian connection. No workspace URL or credential has been supplied; online connectivity and retrieval quality remain unverified.

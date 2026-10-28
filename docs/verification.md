@@ -56,3 +56,9 @@ Timeout or expired lease becomes `outcome_unknown`, with blind retry blocked. Ex
 ## Reproduce
 
 Follow the README using a disposable test database. Install `--extra dev --extra jev` before running the full suite. Run `scripts/smoke_worker.py` only against a disposable local instance without a model key. Never use its expected failure as evidence that a real model succeeded. Provider acceptance above requires the user's own authorized services.
+
+## Qwen embedding configuration change · 2026-10-28
+
+Full Python suite after this change: **50 passed (5.03s), no skips**. Seven added checks use official SDK HTTP fixtures and real PostgreSQL configuration/isolation; they do not establish live Bailian availability. Settings select the Beijing Qwen3.7 Flash model with a separately encrypted key, strict dimensions, a fixed-input connection probe and an official Hy configuration bridge. UI and container evidence for this revision is recorded in the PR. User explicitly chose to enter workspace URL/key later; Hy indexing remains disabled and requires its own accepted data plane. Prior image IDs/screenshots in the baseline report describe the preceding candidate, not this revision.
+
+Qwen revision UI/container checks: TypeScript, ESLint and production builds passed. Actual browser inspection verified isolated settings, dimension persistence, no key echo, a rejected missing-URL save and the real missing-credential 503. Updated full Docker E2E: **1 passed (18.6s)**, including the fixed provider ID, password field and real 503 probe response. No successful live model call is claimed.

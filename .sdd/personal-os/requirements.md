@@ -32,3 +32,7 @@ NFR-05：可重启恢复、幂等 claim、租约超时；外部写入不明结�
 使用当前已认证 GitHub u7-u7；仓库不存在时创建公开独立仓库。用户授权开源，不包含任何密钥/本机 provenance。
 模型、Hy-Memory、Jev、第三方日历/MCP 凭据未提供时，保留接口与明确不可用状态，集成验收标记 blocked，不虚构成功。
 7 天为完整里程碑计划；本轮尽可能实际交付，不宣称未经测试的需求完成。
+
+## 2026-10-28 user-selected embedding
+
+REQ-B-EMBED: Use Qwen3.7 Embedding Flash (`qwen3.7-text-embedding-flash`) in Beijing. Default 1024 dimensions, official alternatives 768/512/256. User will later supply the workspace URL and Bailian key through Settings. Keep chat/embedding credentials separate and encrypted; expose a truthful saved-connection probe. Existing Hy/Jev deferred authorization remains unchanged; provider setup must not falsely claim vector indexing is enabled.

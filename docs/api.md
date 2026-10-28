@@ -38,3 +38,9 @@ An unavailable model or missing server OAuth configuration returns 503. Provider
 Model settings optionally include `fast_model`, `reasoning_model` and `decision_provider` (`rules`, `llm`, `jev`). The selected route is recorded with the actual model. A briefing automation sets `extra.kind="briefing"`; the Worker invokes the real briefing service and persists its history. Memory conflict keys and replacement IDs live in validated `extra.fact_key` and `extra.supersedes`; the UI presents these as memory topics and replacement choices.
 
 Exports include all visible records, messages, schedules and execution history without row-count truncation. The JSON stream reads PostgreSQL in batches of 500 and holds an account lease until the download ends; clients should handle an interrupted download as incomplete.
+
+## Embedding settings
+
+`GET/PATCH /api/settings` includes `embedding_model` (fixed `qwen3.7-text-embedding-flash`), `embedding_dimensions` (1024/768/512/256), `embedding_base_url`, and write-only `embedding_api_key`. Responses expose `embedding_api_key_configured`, `embedding_configured`, namespace and `embedding_index_status=hy_not_enabled`, never the secret. An omitted key is preserved; an explicit empty key clears it without falling back to another user's or administrator's credential.
+
+`POST /api/settings/embedding/test` tests only the saved settings with a fixed probe. A valid provider response returns `{status:"ok",provider:"dashscope",model,dimensions,settings_version}`. Missing key/URL returns 503; invalid Beijing workspace/unsupported dimensions returns 422; provider failure or mismatched vectors returns 502 (provider throttling 429). A receipt confirms only that call, not Hy indexing or semantic search readiness.
