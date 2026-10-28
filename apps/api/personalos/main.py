@@ -466,9 +466,12 @@ def settings(user: Viewer):
 
 @app.patch("/api/settings")
 async def update_settings(payload: SettingsInput, user: Viewer, db: DB):
-    from personalos.services.embedding import validate_embedding_url
+    from personalos.services.embedding import EmbeddingConfiguration, validate_embedding_url
 
     changes = payload.model_dump(exclude_none=True, exclude={"version"})
+    # Validate the effective pair before updating preferences: each model has
+    # different dimension choices, including when only one field changes.
+    EmbeddingConfiguration.for_user(user).with_draft(changes)
     private = decrypt_config(user.secret_config)
     if "base_url" in changes:
         await validate_public_url(changes["base_url"])

@@ -16,13 +16,12 @@ import httpx
 from fastapi import HTTPException
 from openai import APIConnectionError, APIResponseValidationError, APIStatusError, APITimeoutError, AsyncOpenAI
 
-from personalos.config import get_settings
+from personalos.config import EMBEDDING_DIMENSIONS_BY_MODEL, get_settings
 from personalos.models import User
 from personalos.security import decrypt_config
 from personalos.services.model import endpoint_key
 
 MODEL = "qwen3.7-text-embedding-flash"
-DIMENSIONS = {1024, 768, 512, 256}
 
 
 @dataclass(frozen=True)
@@ -33,8 +32,11 @@ class EmbeddingConfiguration:
     dimensions: int = 1024
 
     def __post_init__(self):
-        if self.model != MODEL or type(self.dimensions) is not int or self.dimensions not in DIMENSIONS:
-            raise HTTPException(422, "Qwen3.7 Embedding Flash supports 1024, 768, 512 or 256 dimensions")
+        dimensions = EMBEDDING_DIMENSIONS_BY_MODEL.get(self.model)
+        if dimensions is None:
+            raise HTTPException(422, "Choose qwen3.7-text-embedding or qwen3.7-text-embedding-flash")
+        if type(self.dimensions) is not int or self.dimensions not in dimensions:
+            raise HTTPException(422, f"{self.model} supports {', '.join(map(str, dimensions))} dimensions")
 
     @classmethod
     def for_user(cls, user: User):
@@ -112,7 +114,7 @@ async def validate_embedding_url(url: str) -> None:
     # The legacy Beijing API host remains an official endpoint. Keep it exact
     # rather than accepting arbitrary DashScope subdomains or overseas regions.
     if host != "dashscope.aliyuncs.com" and not workspace_host:
-        raise HTTPException(422, "Qwen3.7 Embedding Flash requires an official Beijing endpoint")
+        raise HTTPException(422, "Qwen3.7 Embedding requires an official Beijing endpoint")
     # These are provider-owned Beijing hosts, not arbitrary user URLs.
     # Save can work offline and behind DNS proxies; the explicit probe performs
     # real DNS/TLS verification. Never accept IPs, userinfo or another provider.

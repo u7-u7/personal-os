@@ -1,4 +1,14 @@
 export const configurationMessages: Record<string, string> = {
+  "Qwen3.7 Embedding turns text into memory retrieval vectors. Choose the standard or Flash model with an official Beijing endpoint and a separate embedding API key. Chat remains available without embeddings.":
+    "Qwen3.7 Embedding 将文字转换为记忆检索向量，可选择标准版或 Flash，使用官方北京接口与独立 API 密钥。尚未配置不会阻止聊天。",
+  "Choose qwen3.7-text-embedding or qwen3.7-text-embedding-flash":
+    "请选择 qwen3.7-text-embedding 或 qwen3.7-text-embedding-flash。",
+  "qwen3.7-text-embedding supports 2560, 2048, 1536, 1024, 768, 512, 256 dimensions":
+    "qwen3.7-text-embedding 支持 2560、2048、1536、1024、768、512、256 维。",
+  "qwen3.7-text-embedding-flash supports 1024, 768, 512, 256 dimensions":
+    "Flash 模型支持 1024、768、512、256 维。",
+  "Qwen3.7 Embedding requires an official Beijing endpoint":
+    "Qwen3.7 Embedding 需要官方北京接口，可使用公共域名或北京工作空间专属域名。",
   "Add a Beijing workspace Base URL or the official Beijing public endpoint, and a separate Bailian embedding API key in Settings":
     "请在设置页填写官方北京接口地址和独立的百炼向量 API 密钥。",
   "Qwen3.7 Embedding Flash turns text into memory retrieval vectors. Use an official Beijing Model Studio endpoint and a separate embedding API key. Chat remains available without embeddings.":

@@ -31,6 +31,13 @@ export function EmbeddingSettings({
   const keyInput = useRef<HTMLInputElement>(null);
   const fields = useRef<HTMLFieldSetElement>(null);
   const [revision, setRevision] = useState(0);
+  const [model, setModel] = useState(
+    settings.embedding_model || "qwen3.7-text-embedding-flash",
+  );
+  const dimensions =
+    model === "qwen3.7-text-embedding"
+      ? [1024, 2560, 2048, 1536, 768, 512, 256]
+      : [1024, 768, 512, 256];
   const locked = useRef(false);
   const check = useMutation({
     mutationFn: async (_identity: { version: number; revision: number }) => {
@@ -109,7 +116,7 @@ export function EmbeddingSettings({
           <h2 id="embedding-heading">{t("2. Your embedding model")}</h2>
           <p>
             {t(
-              "Qwen3.7 Embedding Flash turns text into memory retrieval vectors. Use an official Beijing Model Studio endpoint and a separate embedding API key. Chat remains available without embeddings.",
+              "Qwen3.7 Embedding turns text into memory retrieval vectors. Choose the standard or Flash model with an official Beijing endpoint and a separate embedding API key. Chat remains available without embeddings.",
             )}
           </p>
         </div>
@@ -128,12 +135,32 @@ export function EmbeddingSettings({
           <label>
             {t("Embedding model ID")}{" "}
             <span className="label-meta">{t("Embedding model")}</span>
-            <input
+            <select
               aria-label={t("Embedding model ID")}
               name="embedding_model"
-              value="qwen3.7-text-embedding-flash"
-              readOnly
-            />
+              value={model}
+              onChange={(event) => {
+                const nextModel = event.target.value;
+                const dimension = fields.current?.form?.elements.namedItem(
+                  "embedding_dimensions",
+                );
+                if (
+                  nextModel === "qwen3.7-text-embedding-flash" &&
+                  dimension instanceof HTMLSelectElement &&
+                  ![1024, 768, 512, 256].includes(Number(dimension.value))
+                ) {
+                  dimension.value = "1024";
+                }
+                setModel(nextModel);
+              }}
+            >
+              <option value="qwen3.7-text-embedding">
+                qwen3.7-text-embedding
+              </option>
+              <option value="qwen3.7-text-embedding-flash">
+                qwen3.7-text-embedding-flash
+              </option>
+            </select>
           </label>
           <label>
             {t("Vector dimensions")}
@@ -142,10 +169,11 @@ export function EmbeddingSettings({
               name="embedding_dimensions"
               defaultValue={String(settings.embedding_dimensions || 1024)}
             >
-              <option value="1024">{t("1024 · default")}</option>
-              <option value="768">768</option>
-              <option value="512">512</option>
-              <option value="256">256</option>
+              {dimensions.map((dimension) => (
+                <option key={dimension} value={String(dimension)}>
+                  {dimension === 1024 ? t("1024 · default") : dimension}
+                </option>
+              ))}
             </select>
           </label>
         </div>
