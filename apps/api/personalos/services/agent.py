@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from typing import Annotated, TypedDict
 
-from fastapi import HTTPException
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
@@ -21,7 +20,7 @@ from personalos.config import get_settings
 from personalos.db import utcnow
 from personalos.integrations.decision import JevDecisionProvider, LLMDecisionProvider, RuleDecisionProvider
 from personalos.models import Record, User
-from personalos.security import decrypt_config
+from personalos.services.model import ChatConfiguration
 from personalos.services.memory import MemoryService
 from personalos.services.accounts import account_lease
 from personalos.services.records import audit, create_record, ensure_no_conflict, list_records, serialize
@@ -35,16 +34,7 @@ class AgentState(TypedDict):
 
 
 def model_config(user: User, requested_model: str | None = None) -> dict:
-    config = get_settings()
-    private = decrypt_config(user.secret_config)
-    key = private.get("api_key") or config.openai_api_key
-    if not key:
-        raise HTTPException(503, "No model API key configured. Add one in Settings; no simulated answer is generated")
-    base_url = private.get("base_url") or config.openai_base_url
-    extra = {"extra_body": {"thinking": {"type": "disabled"}}} if "deepseek.com" in base_url else {}
-    return {**extra, "api_key": key, "base_url": base_url,
-            "model": requested_model or user.preferences.get("model") or config.openai_model,
-            "timeout": 60, "max_retries": 0, "streaming": True}
+    return ChatConfiguration.for_user(user, requested_model).parameters()
 
 
 @asynccontextmanager

@@ -436,12 +436,16 @@ def activity(user: Viewer, db: DB):
 @app.get("/api/settings")
 def settings(user: Viewer):
     from personalos.services.embedding import EmbeddingConfiguration
+    from personalos.services.model import ChatConfiguration
 
-    private = decrypt_config(user.secret_config)
     config = get_settings()
-    return {**EmbeddingConfiguration.for_user(user).public_settings(),
-            "name": user.name, "email": user.email, "model": user.preferences.get("model", config.openai_model),
-            "base_url": private.get("base_url", config.openai_base_url), "api_key_configured": bool(private.get("api_key") or config.openai_api_key),
+    chat = ChatConfiguration.for_user(user)
+    embedding = EmbeddingConfiguration.for_user(user)
+    return {**chat.public_settings(), **embedding.public_settings(),
+            "ai_setup_complete": chat.configured and embedding.configured,
+            "missing_configuration_fields": {"chat": chat.missing_fields,
+                "embedding": [name for name, value in (("embedding_base_url", embedding.base_url), ("embedding_api_key", embedding.api_key)) if not value]},
+            "name": user.name, "email": user.email,
             "memory_enabled": user.preferences.get("memory_enabled", True), "theme": user.preferences.get("theme", "system"),
             "timezone": user.preferences.get("timezone", "Asia/Shanghai"), "version": user.version,
             "google_oauth_configured": bool(config.google_client_id and config.google_client_secret),
@@ -477,6 +481,24 @@ async def update_settings(payload: SettingsInput, user: Viewer, db: DB):
     db.commit()
     db.refresh(user)
     return settings(user)
+
+
+@app.post("/api/settings/chat/test")
+async def test_chat_connection(user: Viewer, db: DB):
+    from personalos.services.model import ChatConfiguration, test_chat_connection as probe
+
+    with account_lease(db, user.id):
+        configuration = ChatConfiguration.for_user(user)
+        details = {"model": configuration.model, "settings_version": user.version}
+        try:
+            result = await probe(configuration)
+        except HTTPException as exc:
+            audit(db, user.id, "chat.connection_test", details={**details, "http_status": exc.status_code}, status="failed")
+            db.commit()
+            raise
+        audit(db, user.id, "chat.connection_test", details=details)
+        db.commit()
+        return {**result, "settings_version": user.version}
 
 
 @app.post("/api/settings/embedding/test")

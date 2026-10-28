@@ -13,7 +13,6 @@ import {
   ArrowDownToLine,
   ArrowRight,
   ArrowUpRight,
-  Bot,
   Brain,
   CalendarDays,
   Check,
@@ -48,11 +47,15 @@ import {
   inputDate,
   timeLabel,
   type RecordItem,
-  type Settings,
   type User,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { EmbeddingSettings } from "@/components/embedding-settings";
+import { ChatSettings } from "@/components/chat-settings";
+import {
+  AISetupNotice,
+  useAIConfiguration,
+} from "@/components/ai-configuration";
 
 const resourcePaths: Record<string, string> = {
   tasks: "/tasks",
@@ -233,6 +236,7 @@ interface Dashboard {
   briefing: RecordItem | null;
 }
 export function DashboardPage({ user }: { user: User }) {
+  const configuration = useAIConfiguration();
   const query = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => api<Dashboard>("/dashboard"),
@@ -253,6 +257,7 @@ export function DashboardPage({ user }: { user: User }) {
         ? "Good afternoon"
         : "Good evening";
   async function generate() {
+    if (!configuration.data?.chat_configured || configuration.error) return;
     await action.run(async () => {
       const result = await api<RecordItem>("/briefings", {
         method: "POST",
@@ -302,20 +307,31 @@ export function DashboardPage({ user }: { user: User }) {
                   ? "Your latest briefing brings the important things together."
                   : "Let your assistant connect the dots between your plans, priorities and what matters to you."}
               </p>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  void generate();
-                }}
-                disabled={action.pending}
-              >
-                {action.pending ? (
-                  <LoaderCircle size={15} className="spin" />
-                ) : (
-                  <Sparkles size={15} />
-                )}{" "}
-                Generate my briefing <ArrowUpRight size={15} />
-              </Button>
+              {configuration.data?.chat_configured && !configuration.error ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => void generate()}
+                  disabled={action.pending}
+                >
+                  {action.pending ? (
+                    <LoaderCircle size={15} className="spin" />
+                  ) : (
+                    <Sparkles size={15} />
+                  )}
+                  Generate my briefing <ArrowUpRight size={15} />
+                </Button>
+              ) : configuration.isPending ? (
+                <Button variant="secondary" disabled>
+                  <LoaderCircle size={15} className="spin" /> 正在读取 AI 配置
+                </Button>
+              ) : (
+                <Link
+                  className="briefing-setup-link"
+                  href="/settings?setup=1#chat-configuration"
+                >
+                  配置聊天模型后生成简报 <ArrowUpRight size={15} />
+                </Link>
+              )}
               <span className="hero-footnote">
                 From your tasks, calendar & confirmed memories
               </span>
@@ -1944,17 +1960,15 @@ export function ActivityPage() {
 }
 
 export function SettingsPage({ user }: { user: User }) {
-  const query = useQuery({
-    queryKey: ["settings"],
-    queryFn: () => api<Settings>("/settings"),
-  });
+  const query = useAIConfiguration();
   const action = useAction();
   const [saved, setSaved] = useState(false);
   const [embeddingTesting, setEmbeddingTesting] = useState(false);
+  const [chatTesting, setChatTesting] = useState(false);
   const settingsForm = useRef<HTMLFormElement>(null);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (embeddingTesting) return;
+    if (embeddingTesting || chatTesting || action.pending) return;
     const formElement = event.currentTarget;
     const data = new FormData(formElement);
     setSaved(false);
@@ -1979,7 +1993,7 @@ export function SettingsPage({ user }: { user: User }) {
       payload.embedding_api_key = data.get("embedding_api_key");
     for (const field of ["fast_model", "reasoning_model"]) {
       const value = String(data.get(field) || "").trim();
-      if (value) payload[field] = value;
+      payload[field] = value;
     }
     const ok = await action.run(() =>
       api("/settings", { method: "PATCH", body: JSON.stringify(payload) }),
@@ -2001,16 +2015,18 @@ export function SettingsPage({ user }: { user: User }) {
         title="Make it feel like you."
         subtitle="Your model, your privacy, your preferences."
       />
-      <Failure error={query.error} />
+      <AISetupNotice full />
       <ErrorText text={action.error} />
       {saved && (
         <div className="success-banner" role="status">
-          <CheckCircle2 size={17} /> Your settings have been saved.
+          <CheckCircle2 size={17} />{" "}
+          配置已保存。保存不代表连接已验证，请分别测试聊天和向量模型。
         </div>
       )}
       {query.isPending ? (
         <Loading />
       ) : (
+        !query.error &&
         query.data && (
           <div className="settings-layout">
             <form
@@ -2020,165 +2036,27 @@ export function SettingsPage({ user }: { user: User }) {
                 void submit(e);
               }}
             >
-              <section className="panel settings-section">
-                <div className="settings-section-heading">
-                  <span className="small-icon">
-                    <Bot size={21} />
-                  </span>
-                  <div>
-                    <h2>Your AI model</h2>
-                    <p>
-                      Connect an OpenAI-compatible model provider. Keys stay
-                      encrypted on the server.
-                    </p>
-                  </div>
-                </div>
-                <div className="provider-presets">
-                  <span>Quick setup</span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => {
-                      const form = settingsForm.current;
-                      if (!form) return;
-                      const model = form.elements.namedItem("model");
-                      const base = form.elements.namedItem("base_url");
-                      if (model instanceof HTMLInputElement)
-                        model.value = "deepseek-flash";
-                      if (base instanceof HTMLInputElement)
-                        base.value = "https://api.deepseek.com";
-                      const fastModel = form.elements.namedItem("fast_model");
-                      const reasoningModel =
-                        form.elements.namedItem("reasoning_model");
-                      if (fastModel instanceof HTMLInputElement)
-                        fastModel.value = "deepseek-flash";
-                      if (reasoningModel instanceof HTMLInputElement)
-                        reasoningModel.value = "deepseek-v4-pro";
-                      setSaved(false);
-                    }}
-                  >
-                    DeepSeek <ArrowUpRight size={13} />
-                  </Button>
-                  <span className="field-note">
-                    Applies a preset. Add your key, then save.
-                  </span>
-                </div>
-                <div className="form-grid">
-                  <label>
-                    Model ID
-                    <input
-                      name="model"
-                      defaultValue={String(query.data.model || "")}
-                      placeholder="e.g. gpt-4.1-mini"
-                      required
-                    />
-                  </label>
-                  <label>
-                    Provider base URL
-                    <input
-                      name="base_url"
-                      type="url"
-                      defaultValue={String(query.data.base_url || "")}
-                      placeholder="https://api.openai.com/v1"
-                      required
-                    />
-                  </label>
-                </div>
-                <div className="form-grid">
-                  <label>
-                    Fast routing model{" "}
-                    <span className="label-meta">optional</span>
-                    <input
-                      name="fast_model"
-                      defaultValue={String(query.data.fast_model || "")}
-                      placeholder="Leave blank to use the main model"
-                    />
-                  </label>
-                  <label>
-                    Reasoning routing model{" "}
-                    <span className="label-meta">optional</span>
-                    <input
-                      name="reasoning_model"
-                      defaultValue={String(query.data.reasoning_model || "")}
-                      placeholder="Leave blank to use the main model"
-                    />
-                  </label>
-                </div>
-                <div className="field-note">
-                  Optional routing overrides for quick decisions and complex
-                  work. Selecting a preset only fills the form; save to apply.
-                </div>
-                <label>
-                  How to route requests
-                  <select
-                    name="decision_provider"
-                    defaultValue={String(
-                      query.data.decision_provider || "rules",
-                    )}
-                  >
-                    <option value="rules">Fast rules · default</option>
-                    <option value="llm">Your language model</option>
-                    <option value="jev">
-                      Jev · requires server authorization
-                    </option>
-                  </select>
-                </label>
-                <div className="field-note">
-                  <ShieldCheck size={13} /> Routing chooses a model; sensitive
-                  actions still require your approval.
-                </div>
-                <label>
-                  API key{" "}
-                  <span className="label-meta">
-                    {query.data.api_key_configured
-                      ? "A key is securely configured"
-                      : "No key configured"}
-                  </span>
-                  <input
-                    name="api_key"
-                    type="password"
-                    autoComplete="new-password"
-                    placeholder={
-                      query.data.api_key_configured
-                        ? "Leave blank to keep the current key"
-                        : "Enter your provider API key"
-                    }
-                  />
-                </label>
-                <div className="field-note">
-                  <LockKeyhole size={13} /> Existing API keys are never returned
-                  to your browser.
-                </div>
-                {query.data.api_key_configured && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      if (
-                        confirm(
-                          "Remove the configured model API key? Chat and AI briefings will become unavailable.",
-                        )
-                      )
-                        void action.run(() =>
-                          api("/settings", {
-                            method: "PATCH",
-                            body: JSON.stringify({
-                              api_key: "",
-                              version: query.data?.version,
-                            }),
-                          }),
-                        );
-                    }}
-                  >
-                    Remove API key
-                  </Button>
-                )}
-              </section>
+              <ChatSettings
+                settings={query.data}
+                pending={action.pending || embeddingTesting}
+                onChange={() => setSaved(false)}
+                onTestPendingChange={setChatTesting}
+                onRemoveKey={async () => {
+                  setSaved(false);
+                  return action.run(() =>
+                    api("/settings", {
+                      method: "PATCH",
+                      body: JSON.stringify({
+                        api_key: "",
+                        version: query.data?.version,
+                      }),
+                    }),
+                  );
+                }}
+              />
               <EmbeddingSettings
                 settings={query.data}
-                pending={action.pending}
+                pending={action.pending || chatTesting}
                 onTestPendingChange={setEmbeddingTesting}
                 onChange={() => setSaved(false)}
                 onRemoveKey={async () => {
@@ -2253,7 +2131,7 @@ export function SettingsPage({ user }: { user: User }) {
                 </span>
                 <Button
                   type="submit"
-                  disabled={action.pending || embeddingTesting}
+                  disabled={action.pending || embeddingTesting || chatTesting}
                 >
                   {action.pending ? (
                     <LoaderCircle className="spin" size={15} />
@@ -2389,10 +2267,7 @@ export function ChatPage() {
     queryKey: ["sessions"],
     queryFn: () => api<RecordItem[]>("/chat/sessions"),
   });
-  const settings = useQuery({
-    queryKey: ["settings"],
-    queryFn: () => api<Settings>("/settings"),
-  });
+  const settings = useAIConfiguration();
   const [session, setSession] = useState<string | undefined>(() =>
     typeof window !== "undefined"
       ? new URLSearchParams(window.location.search).get("session") || undefined
@@ -2419,6 +2294,12 @@ export function ChatPage() {
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!input.trim() || pending) return;
+    if (!settings.data?.chat_configured || settings.error) {
+      setError(
+        "请先在设置页填写并保存聊天模型的 Model ID、Base URL 和 API Key。输入内容已保留。",
+      );
+      return;
+    }
     const text = input.trim();
     setInput("");
     setError(undefined);
@@ -2548,7 +2429,7 @@ export function ChatPage() {
               />
               <span
                 className={
-                  settings.data?.api_key_configured
+                  settings.data?.chat_configured
                     ? "tiny-dot"
                     : "tiny-dot muted-dot"
                 }
@@ -2584,11 +2465,13 @@ export function ChatPage() {
                     </button>
                   ))}
                 </div>
-                {settings.data && !settings.data.api_key_configured && (
+                {settings.data && !settings.data.chat_configured && (
                   <div className="chat-setup-note">
-                    <LockKeyhole size={15} /> Add a model API key in{" "}
-                    <Link href="/settings">Settings</Link> to start a real
-                    conversation.
+                    <LockKeyhole size={15} /> 先填写聊天模型的 Model ID、Base
+                    URL 和 API Key：{" "}
+                    <Link href="/settings?setup=1#chat-configuration">
+                      去配置聊天模型
+                    </Link>
                   </div>
                 )}
               </div>
@@ -2655,6 +2538,13 @@ export function ChatPage() {
           )}
           <Failure error={history.error} />
           <ErrorText text={error} />
+          {error && !settings.data?.chat_configured && (
+            <div className="chat-config-action">
+              <Link href="/settings?setup=1#chat-configuration">
+                去设置页配置聊天模型 <ArrowUpRight size={14} />
+              </Link>
+            </div>
+          )}
           <form
             className="chat-composer"
             onSubmit={(e) => {
@@ -2696,7 +2586,7 @@ export function ChatPage() {
                 <Button
                   type="submit"
                   size="icon"
-                  disabled={!input.trim()}
+                  disabled={!input.trim() || settings.isPending}
                   aria-label="Send message"
                 >
                   <ArrowUpRight size={19} />
