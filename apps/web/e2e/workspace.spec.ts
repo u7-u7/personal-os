@@ -132,9 +132,15 @@ test("real workspace: account, task, memory consent, approval and model boundary
   await expect(page.locator('main [role="alert"]')).toContainText(
     "Confirm which existing fact this replaces",
   );
+  const topicResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/memories?") &&
+      new URL(response.url()).searchParams.get("topic") === "focus-hours",
+  );
   await replacementCard
     .getByRole("button", { name: "Edit", exact: true })
     .click();
+  expect((await topicResponse).ok()).toBeTruthy();
   await page
     .getByRole("group", { name: "Replace conflicting facts" })
     .getByRole("checkbox", { name: /I prefer a calm morning/ })

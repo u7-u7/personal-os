@@ -177,10 +177,14 @@ def delete_task(item_id: str, user: Viewer, db: DB, version: int = Query(..., ge
 
 
 @app.get("/api/memories")
-def memories(user: Viewer, db: DB, q: str = Query("", max_length=200), limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0)):
+def memories(user: Viewer, db: DB, q: str = Query("", max_length=200), topic: str | None = Query(None, max_length=500), limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0)):
     query = select(Record).where(Record.owner_id == user.id, Record.kind == "memory", Record.deleted_at.is_(None))
     if q:
         query = query.where(func.lower(Record.content).contains(q.lower(), autoescape=True))
+    if topic is not None:
+        # The owner/kind/deleted index bounds IO before JSON fact-key filtering.
+        # Apply the topic predicate before pagination so older conflicts remain selectable.
+        query = query.where(Record.extra["fact_key"].as_string() == topic)
     rows = db.scalars(query.order_by(Record.created_at.desc()).limit(limit).offset(offset)).all()
     return [serialize(row) for row in rows]
 

@@ -2749,11 +2749,16 @@ function ResourceEditor({
         )
       : [],
   );
+  const debouncedMemoryTopic = useDebouncedSearch(memoryTopic);
   const memoryCandidates = useQuery({
-    queryKey: ["memory-conflict-candidates"],
-    enabled: kind === "memory",
+    queryKey: ["memory-conflict-candidates", debouncedMemoryTopic],
+    staleTime: 0,
+    enabled: kind === "memory" && !!debouncedMemoryTopic,
     queryFn: ({ signal }) =>
-      api<RecordItem[]>("/memories?limit=200", { signal }),
+      api<RecordItem[]>(
+        `/memories?topic=${encodeURIComponent(debouncedMemoryTopic)}&limit=200`,
+        { signal },
+      ),
   });
   const conflictingMemories = (memoryCandidates.data || []).filter(
     (candidate) =>
@@ -3008,7 +3013,8 @@ function ResourceEditor({
                       void memoryCandidates.refetch();
                     }}
                   />
-                  {memoryCandidates.isPending ? (
+                  {memoryCandidates.isPending ||
+                  memoryTopic.trim() !== debouncedMemoryTopic ? (
                     <Loading />
                   ) : conflictingMemories.length ? (
                     <>
@@ -3040,12 +3046,9 @@ function ResourceEditor({
                       ))}
                     </>
                   ) : (
-                    <p>No recent confirmed facts use this topic.</p>
+                    <p>No confirmed facts use this topic.</p>
                   )}
-                  <small>
-                    The latest 200 memories are shown here. All existing facts
-                    are checked again when you confirm.
-                  </small>
+                  <small>Showing confirmed facts for this topic.</small>
                 </fieldset>
               )}
               <div className="consent-box memory-review-note">
