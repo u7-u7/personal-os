@@ -8,7 +8,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, model_validato
 
 class Credentials(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=10, max_length=256)
+    password: str = Field(min_length=8, max_length=256)
     name: str = Field(default="Personal workspace", min_length=1, max_length=120)
 
 

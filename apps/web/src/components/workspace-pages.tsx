@@ -41,15 +41,9 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import {
-  api,
-  dateLabel,
-  inputDate,
-  timeLabel,
-  type RecordItem,
-  type User,
-} from "@/lib/api";
+import { api, inputDate, type RecordItem, type User } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { useI18n, LanguageSelector } from "@/components/i18n-provider";
 import { EmbeddingSettings } from "@/components/embedding-settings";
 import { ChatSettings } from "@/components/chat-settings";
 import {
@@ -139,20 +133,22 @@ function Failure({
   error: Error | null;
   retry?: () => void;
 }) {
+  const { t, errorText } = useI18n();
   return error ? (
     <div className="error-banner" role="alert">
-      <span>{error.message}</span>
+      <span>{errorText(error.message)}</span>
       {retry && (
         <button onClick={retry}>
-          Try again <RefreshCw size={13} />
+          {t("Try again")} <RefreshCw size={13} />
         </button>
       )}
     </div>
   ) : null;
 }
 function Loading() {
+  const { t } = useI18n();
   return (
-    <div className="skeleton-list" aria-label="Loading">
+    <div className="skeleton-list" aria-label={t("Loading")}>
       <div />
       <div />
       <div />
@@ -160,18 +156,22 @@ function Loading() {
   );
 }
 function Badge({ status }: { status?: string }) {
+  const { t } = useI18n();
   return (
     <span className={`badge badge-${status || "default"}`}>
-      {status === "superseded"
-        ? "replaced"
-        : status?.replaceAll("_", " ") || "unknown"}
+      {t(
+        status === "superseded"
+          ? "replaced"
+          : status?.replaceAll("_", " ") || "unknown",
+      )}
     </span>
   );
 }
 function ErrorText({ text }: { text?: string }) {
+  const { t, errorText } = useI18n();
   return text ? (
     <div className="error-banner" role="alert">
-      {text}
+      {errorText(t(text))}
     </div>
   ) : null;
 }
@@ -182,14 +182,15 @@ function RowActions({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="row-actions">
-      <button className="icon-button" aria-label="Edit" onClick={onEdit}>
+      <button className="icon-button" aria-label={t("Edit")} onClick={onEdit}>
         <Edit3 size={15} />
       </button>
       <button
         className="icon-button delete"
-        aria-label="Delete"
+        aria-label={t("Delete")}
         onClick={onDelete}
       >
         <Trash2 size={15} />
@@ -197,14 +198,20 @@ function RowActions({
     </div>
   );
 }
-async function remove(kind: string, item: RecordItem) {
+async function remove(
+  kind: string,
+  item: RecordItem,
+  t: (message: string) => string,
+) {
   const result = await api<{ approval_required?: boolean }>(
     `${resourcePaths[kind]}/${item.id}?version=${item.version}`,
     { method: "DELETE", body: JSON.stringify({ version: item.version }) },
   );
   if (result?.approval_required)
     alert(
-      "Deletion is waiting for your approval. Review the request in Activity & approvals.",
+      t(
+        "Deletion is waiting for your approval. Review the request in Activity & approvals.",
+      ),
     );
   return result;
 }
@@ -236,6 +243,7 @@ interface Dashboard {
   briefing: RecordItem | null;
 }
 export function DashboardPage({ user }: { user: User }) {
+  const { t, locale, dateLabel, timeLabel } = useI18n();
   const configuration = useAIConfiguration();
   const query = useQuery({
     queryKey: ["dashboard"],
@@ -252,10 +260,10 @@ export function DashboardPage({ user }: { user: User }) {
   const now = new Date();
   const greeting =
     now.getHours() < 12
-      ? "Good morning"
+      ? t("Good morning")
       : now.getHours() < 18
-        ? "Good afternoon"
-        : "Good evening";
+        ? t("Good afternoon")
+        : t("Good evening");
   async function generate() {
     if (!configuration.data?.chat_configured || configuration.error) return;
     await action.run(async () => {
@@ -270,17 +278,20 @@ export function DashboardPage({ user }: { user: User }) {
     <>
       <PageHeader
         eyebrow={now
-          .toLocaleDateString("en", {
+          .toLocaleDateString(locale, {
             weekday: "long",
             month: "long",
             day: "numeric",
           })
           .toUpperCase()}
-        title={`${greeting}, ${user.name || user.email.split("@")[0]}.`}
-        subtitle="A clear view of your day. A little room to breathe."
+        title={t("{greeting}, {name}.", {
+          greeting,
+          name: user.name || user.email.split("@")[0],
+        })}
+        subtitle={t("A clear view of your day. A little room to breathe.")}
       >
         <Button variant="secondary" onClick={() => setEditor(true)}>
-          <Plus size={16} /> Add a task
+          <Plus size={16} /> {t("Add a task")}{" "}
         </Button>
       </PageHeader>
       <Failure
@@ -295,17 +306,20 @@ export function DashboardPage({ user }: { user: User }) {
           <section className="day-hero">
             <div className="hero-content">
               <span className="hero-label">
-                <Sparkles size={14} /> YOUR DAILY PERSPECTIVE
+                <Sparkles size={14} /> {t("YOUR DAILY PERSPECTIVE")}{" "}
               </span>
               <h2>
-                A more intentional day
-                <br />
-                starts with a little clarity.
+                {t("A more intentional day")} <br />
+                {t("starts with a little clarity.")}{" "}
               </h2>
               <p>
                 {data?.briefing
-                  ? "Your latest briefing brings the important things together."
-                  : "Let your assistant connect the dots between your plans, priorities and what matters to you."}
+                  ? t(
+                      "Your latest briefing brings the important things together.",
+                    )
+                  : t(
+                      "Let your assistant connect the dots between your plans, priorities and what matters to you.",
+                    )}
               </p>
               {configuration.data?.chat_configured && !configuration.error ? (
                 <Button
@@ -318,22 +332,24 @@ export function DashboardPage({ user }: { user: User }) {
                   ) : (
                     <Sparkles size={15} />
                   )}
-                  Generate my briefing <ArrowUpRight size={15} />
+                  {t("Generate my briefing")} <ArrowUpRight size={15} />
                 </Button>
               ) : configuration.isPending ? (
                 <Button variant="secondary" disabled>
-                  <LoaderCircle size={15} className="spin" /> 正在读取 AI 配置
+                  <LoaderCircle size={15} className="spin" />{" "}
+                  {t("Reading AI configuration")}{" "}
                 </Button>
               ) : (
                 <Link
                   className="briefing-setup-link"
                   href="/settings?setup=1#chat-configuration"
                 >
-                  配置聊天模型后生成简报 <ArrowUpRight size={15} />
+                  {t("Configure your chat model to generate a briefing")}{" "}
+                  <ArrowUpRight size={15} />
                 </Link>
               )}
               <span className="hero-footnote">
-                From your tasks, calendar & confirmed memories
+                {t("From your tasks, calendar & confirmed memories")}{" "}
               </span>
             </div>
             <div className="hero-art" aria-hidden="true">
@@ -351,24 +367,24 @@ export function DashboardPage({ user }: { user: User }) {
           <div className="stats-grid">
             {[
               {
-                label: "Open tasks",
+                label: t("Open tasks"),
                 value: data?.stats.tasks,
                 icon: CheckCircle2,
-                note: "One thing at a time",
+                note: t("One thing at a time"),
                 route: "tasks",
               },
               {
-                label: "Memories",
+                label: t("Memories"),
                 value: data?.stats.memories,
                 icon: Brain,
-                note: "Your personal context",
+                note: t("Your personal context"),
                 route: "memory",
               },
               {
-                label: "Automations",
+                label: t("Automations"),
                 value: data?.stats.automations,
                 icon: Zap,
-                note: "Working in the background",
+                note: t("Working in the background"),
                 route: "automations",
               },
             ].map(({ label, value, icon: Icon, note, route }) => (
@@ -389,12 +405,12 @@ export function DashboardPage({ user }: { user: User }) {
             <div className="panel-heading">
               <div>
                 <h2>
-                  <CheckCircle2 size={18} /> In your focus
+                  <CheckCircle2 size={18} /> {t("In your focus")}{" "}
                 </h2>
-                <p>A few things to move forward.</p>
+                <p>{t("A few things to move forward.")}</p>
               </div>
               <Link href="/tasks" className="text-link">
-                All tasks <ArrowRight size={14} />
+                {t("All tasks")} <ArrowRight size={14} />
               </Link>
             </div>
             {query.isPending ? (
@@ -403,15 +419,17 @@ export function DashboardPage({ user }: { user: User }) {
                 (t) => !["done", "cancelled"].includes(t.status || ""),
               ).length ? (
               <Empty
-                title="A little breathing room."
-                text="Capture something you want to get done. We'll keep it in view."
+                title={t("A little breathing room.")}
+                text={t(
+                  "Capture something you want to get done. We'll keep it in view.",
+                )}
                 action={
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => setEditor(true)}
                   >
-                    <Plus size={14} /> Add your first task
+                    <Plus size={14} /> {t("Add your first task")}{" "}
                   </Button>
                 }
               />
@@ -437,10 +455,10 @@ export function DashboardPage({ user }: { user: User }) {
           {(briefing || data?.briefing) && (
             <section className="panel briefing-result">
               <span className="eyebrow">
-                <Sparkles size={14} /> YOUR BRIEFING
+                <Sparkles size={14} /> {t("YOUR BRIEFING")}{" "}
               </span>
               <h2>
-                {(briefing || data?.briefing)?.title || "A view of your day"}
+                {(briefing || data?.briefing)?.title || t("A view of your day")}
               </h2>
               <div className="prose-content">
                 {(briefing || data?.briefing)?.content}
@@ -450,7 +468,7 @@ export function DashboardPage({ user }: { user: User }) {
           <section className="panel briefing-history">
             <details>
               <summary>
-                <History size={16} /> Previous briefings{" "}
+                <History size={16} /> {t("Previous briefings")}{" "}
                 <span>{briefingHistory.data?.length || 0}</span>
               </summary>
               <Failure error={briefingHistory.error} />
@@ -458,7 +476,7 @@ export function DashboardPage({ user }: { user: User }) {
                 briefingHistory.data.map((item) => (
                   <details className="briefing-history-item" key={item.id}>
                     <summary>
-                      {item.title || "Daily briefing"}
+                      {item.title || t("Daily briefing")}
                       <time>
                         {dateLabel(item.created_at)} ·{" "}
                         {timeLabel(item.created_at)}
@@ -468,7 +486,7 @@ export function DashboardPage({ user }: { user: User }) {
                   </details>
                 ))
               ) : (
-                <p>Your generated briefings will appear here.</p>
+                <p>{t("Your generated briefings will appear here.")}</p>
               )}
             </details>
           </section>
@@ -477,13 +495,15 @@ export function DashboardPage({ user }: { user: User }) {
               <Sparkles size={24} />
             </span>
             <div>
-              <h3>Thinking out loud is a good place to start.</h3>
-              <p>Make a plan, untangle an idea, or simply ask a question.</p>
+              <h3>{t("Thinking out loud is a good place to start.")}</h3>
+              <p>
+                {t("Make a plan, untangle an idea, or simply ask a question.")}
+              </p>
             </div>
             <Link
               href="/chat"
               className="circle-arrow"
-              aria-label="Open AI assistant"
+              aria-label={t("Open AI assistant")}
             >
               <ArrowUpRight size={22} />
             </Link>
@@ -493,9 +513,9 @@ export function DashboardPage({ user }: { user: User }) {
           <section className="panel calendar-preview">
             <div className="panel-heading">
               <h2>
-                <CalendarDays size={17} /> On the horizon
+                <CalendarDays size={17} /> {t("On the horizon")}{" "}
               </h2>
-              <Link href="/calendar" aria-label="Open calendar">
+              <Link href="/calendar" aria-label={t("Open calendar")}>
                 <ArrowUpRight size={16} />
               </Link>
             </div>
@@ -511,7 +531,7 @@ export function DashboardPage({ user }: { user: User }) {
                     key={i}
                   >
                     <span>
-                      {date.toLocaleDateString("en", { weekday: "narrow" })}
+                      {date.toLocaleDateString(locale, { weekday: "narrow" })}
                     </span>
                     <strong>{date.getDate()}</strong>
                   </div>
@@ -529,7 +549,7 @@ export function DashboardPage({ user }: { user: User }) {
                       <strong>{event.title}</strong>
                       <small>
                         {dateLabel(event.start_at)} ·{" "}
-                        {event.provider || "local"}
+                        {t(event.provider || "local")}
                       </small>
                     </div>
                   </div>
@@ -538,10 +558,12 @@ export function DashboardPage({ user }: { user: User }) {
             ) : (
               <div className="quiet-empty">
                 <CalendarDays size={23} strokeWidth={1.2} />
-                <strong>Your calendar has space.</strong>
-                <p>Add an event or connect a calendar to see what’s ahead.</p>
+                <strong>{t("Your calendar has space.")}</strong>
+                <p>
+                  {t("Add an event or connect a calendar to see what’s ahead.")}
+                </p>
                 <Link href="/calendar">
-                  Open calendar <ArrowRight size={13} />
+                  {t("Open calendar")} <ArrowRight size={13} />
                 </Link>
               </div>
             )}
@@ -551,37 +573,40 @@ export function DashboardPage({ user }: { user: User }) {
               <Brain size={20} />
             </span>
             <h2>
-              A second brain,
-              <br />
-              with your permission.
+              {t("A second brain,")} <br />
+              {t("with your permission.")}{" "}
             </h2>
             <p>
-              Keep the context that matters. You decide what stays, changes, or
-              goes.
+              {t(
+                "Keep the context that matters. You decide what stays, changes, or goes.",
+              )}{" "}
             </p>
             <Link href="/memory" className="text-link">
-              Explore your memory <ArrowRight size={14} />
+              {t("Explore your memory")} <ArrowRight size={14} />
             </Link>
             <div className="memory-note">
-              <LockKeyhole size={13} /> Nothing remembered without your say.
+              <LockKeyhole size={13} />{" "}
+              {t("Nothing remembered without your say.")}{" "}
             </div>
           </section>
           <div className="day-note">
             <span>✳</span>
             <p>
-              Progress doesn’t have to be loud.
-              <br />
-              One meaningful thing is enough.
+              {t("Progress doesn’t have to be loud.")} <br />
+              {t("One meaningful thing is enough.")}{" "}
             </p>
-            <small>A LITTLE REMINDER</small>
+            <small>{t("A LITTLE REMINDER")}</small>
           </div>
           {!!data?.stats.approvals && (
             <Link className="approval-nudge" href="/activity">
               <ShieldCheck size={20} />
               <span>
-                {data.stats.approvals} action
-                {data.stats.approvals === 1 ? "" : "s"} waiting for your
-                approval
+                {t(
+                  data.stats.approvals === 1
+                    ? "{count} action waiting for your approval"
+                    : "{count} actions waiting for your approval",
+                  { count: data.stats.approvals },
+                )}
               </span>
               <ArrowRight size={16} />
             </Link>
@@ -606,13 +631,16 @@ function TaskRow({
   onDelete: () => void;
   compact?: boolean;
 }) {
+  const { t, dateLabel, errorText } = useI18n();
   const action = useAction();
   return (
     <div className={`task-row ${item.status === "done" ? "task-done" : ""}`}>
       <button
         className="task-check"
         disabled={action.pending}
-        aria-label={item.status === "done" ? "Reopen task" : "Complete task"}
+        aria-label={
+          item.status === "done" ? t("Reopen task") : t("Complete task")
+        }
         onClick={() => {
           void action.run(() =>
             api(`/tasks/${item.id}`, {
@@ -636,7 +664,7 @@ function TaskRow({
         {item.content && !compact && <p>{item.content}</p>}
         <div className="task-meta">
           <span className={`priority priority-${item.priority}`}>
-            {item.priority || "medium"}
+            {t(item.priority || "medium")}
           </span>
           {item.due_at && (
             <span>
@@ -646,11 +674,13 @@ function TaskRow({
           )}
           {!compact && <Badge status={item.status} />}
         </div>
-        {action.error && <span className="inline-error">{action.error}</span>}
+        {action.error && (
+          <span className="inline-error">{errorText(t(action.error))}</span>
+        )}
       </div>
       {!compact && <RowActions onEdit={onEdit} onDelete={onDelete} />}
       {compact && (
-        <Link href="/tasks" aria-label="View task">
+        <Link href="/tasks" aria-label={t("View task")}>
           <ChevronRight size={17} />
         </Link>
       )}
@@ -658,6 +688,7 @@ function TaskRow({
   );
 }
 export function TasksPage() {
+  const { t } = useI18n();
   const query = useRecords("tasks");
   const [filter, setFilter] = useState("open");
   const [search, setSearch] = useState("");
@@ -674,12 +705,12 @@ export function TasksPage() {
   return (
     <>
       <PageHeader
-        eyebrow="MAKE SPACE FOR PROGRESS"
-        title="One thing at a time."
-        subtitle="Get it out of your head and into a plan."
+        eyebrow={t("MAKE SPACE FOR PROGRESS")}
+        title={t("One thing at a time.")}
+        subtitle={t("Get it out of your head and into a plan.")}
       >
         <Button onClick={() => setEdit("new")}>
-          <Plus size={16} /> Add task
+          <Plus size={16} /> {t("Add task")}{" "}
         </Button>
       </PageHeader>
       <div className="toolbar">
@@ -691,10 +722,10 @@ export function TasksPage() {
               key={value}
             >
               {value === "open"
-                ? "To do"
+                ? t("To do")
                 : value === "done"
-                  ? "Completed"
-                  : "All tasks"}
+                  ? t("Completed")
+                  : t("All tasks")}
               <span>
                 {
                   (query.data || []).filter(
@@ -714,8 +745,8 @@ export function TasksPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Find a task…"
-            aria-label="Find a task"
+            placeholder={t("Find a task…")}
+            aria-label={t("Find a task")}
           />
         </div>
       </div>
@@ -736,8 +767,10 @@ export function TasksPage() {
               item={item}
               onEdit={() => setEdit(item)}
               onDelete={() => {
-                if (confirm(`Delete “${item.title}”?`))
-                  void action.run(() => remove("tasks", item));
+                if (
+                  confirm(t("Delete “{title}”?", { title: item.title || "" }))
+                )
+                  void action.run(() => remove("tasks", item, t));
               }}
             />
           ))
@@ -746,28 +779,30 @@ export function TasksPage() {
             icon={<CheckCircle2 size={29} strokeWidth={1.3} />}
             title={
               search
-                ? "No tasks found."
+                ? t("No tasks found.")
                 : filter === "done"
-                  ? "Your wins will live here."
-                  : "Every good plan starts somewhere."
+                  ? t("Your wins will live here.")
+                  : t("Every good plan starts somewhere.")
             }
             text={
               search
-                ? "Try a different search or filter."
-                : "Capture a task, set a priority, and take it one step at a time."
+                ? t("Try a different search or filter.")
+                : t(
+                    "Capture a task, set a priority, and take it one step at a time.",
+                  )
             }
             action={
               <Button variant="secondary" onClick={() => setEdit("new")}>
-                <Plus size={15} /> Add a task
+                <Plus size={15} /> {t("Add a task")}{" "}
               </Button>
             }
           />
         )}
       </section>
       <div className="subtle-tip">
-        <Sparkles size={15} /> Prefer to think out loud?{" "}
+        <Sparkles size={15} /> {t("Prefer to think out loud?")}{" "}
         <Link href="/chat">
-          Ask your assistant to create a task <ArrowUpRight size={13} />
+          {t("Ask your assistant to create a task")} <ArrowUpRight size={13} />
         </Link>
       </div>
       {edit && (
@@ -791,6 +826,7 @@ function useDebouncedSearch(value: string) {
 }
 
 export function MemoryPage() {
+  const { t, dateLabel } = useI18n();
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState(() =>
     typeof window !== "undefined"
@@ -814,9 +850,11 @@ export function MemoryPage() {
   return (
     <>
       <PageHeader
-        eyebrow="CONTEXT, WITH CONSENT"
-        title="A place for what matters."
-        subtitle="Your preferences, goals and important details. Always yours to control."
+        eyebrow={t("CONTEXT, WITH CONSENT")}
+        title={t("A place for what matters.")}
+        subtitle={t(
+          "Your preferences, goals and important details. Always yours to control.",
+        )}
       >
         <Button
           variant="secondary"
@@ -824,20 +862,21 @@ export function MemoryPage() {
             void action.run(downloadExport);
           }}
         >
-          <ArrowDownToLine size={15} /> Export
+          <ArrowDownToLine size={15} /> {t("Export")}{" "}
         </Button>
         <Button onClick={() => setEdit("new")}>
-          <Plus size={16} /> Add memory
+          <Plus size={16} /> {t("Add memory")}{" "}
         </Button>
       </PageHeader>
       <div className="info-strip">
         <ShieldCheck size={20} />
         <div>
-          <strong>You choose what stays.</strong>
+          <strong>{t("You choose what stays.")}</strong>
           <span>
             {" "}
-            Suggestions wait for your confirmation before becoming long-term
-            context.
+            {t(
+              "Suggestions wait for your confirmation before becoming long-term context.",
+            )}{" "}
           </span>
         </div>
       </div>
@@ -851,10 +890,10 @@ export function MemoryPage() {
                 onClick={() => setFilter(value)}
               >
                 {value === "all"
-                  ? "All memories"
+                  ? t("All memories")
                   : value === "pending"
-                    ? "To review"
-                    : value[0].toUpperCase() + value.slice(1)}
+                    ? t("To review")
+                    : t(value[0].toUpperCase() + value.slice(1))}
               </button>
             ),
           )}
@@ -862,8 +901,8 @@ export function MemoryPage() {
         <div className="search-input">
           <Search size={15} />
           <input
-            placeholder="Search your memories…"
-            aria-label="Search memories"
+            placeholder={t("Search your memories…")}
+            aria-label={t("Search memories")}
             maxLength={200}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -880,17 +919,21 @@ export function MemoryPage() {
             icon={<Brain size={30} strokeWidth={1.3} />}
             title={
               debouncedSearch
-                ? "Nothing matched that memory."
-                : "A fresh page for your story."
+                ? t("Nothing matched that memory.")
+                : t("A fresh page for your story.")
             }
             text={
               debouncedSearch
-                ? "Try another phrase or category. Your search runs against your saved memories on the server."
-                : "Add something worth remembering. Your assistant will use confirmed memories to understand you better."
+                ? t(
+                    "Try another phrase or category. Your search runs against your saved memories on the server.",
+                  )
+                : t(
+                    "Add something worth remembering. Your assistant will use confirmed memories to understand you better.",
+                  )
             }
             action={
               <Button variant="secondary" onClick={() => setEdit("new")}>
-                <Plus size={14} /> Save a memory
+                <Plus size={14} /> {t("Save a memory")}{" "}
               </Button>
             }
           />
@@ -902,14 +945,14 @@ export function MemoryPage() {
               <div className="memory-card-top">
                 <span className={`memory-category category-${item.category}`}>
                   <Brain size={13} />
-                  {item.category?.replaceAll("_", " ") || "fact"}
+                  {t(item.category?.replaceAll("_", " ") || "fact")}
                 </span>
                 <Badge status={item.status} />
               </div>
               <p>{item.content}</p>
               {typeof item.extra?.fact_key === "string" && (
                 <div className="memory-topic">
-                  <span>Topic</span>
+                  <span>{t("Topic")}</span>
                   {item.extra.fact_key}
                 </div>
               )}
@@ -921,11 +964,13 @@ export function MemoryPage() {
                     title={item.source}
                     href={`/chat?session=${encodeURIComponent(item.source.slice(5))}`}
                   >
-                    Source conversation <ArrowUpRight size={11} />
+                    {t("Source conversation")} <ArrowUpRight size={11} />
                   </Link>
                 ) : (
                   <span title={item.source}>
-                    {item.source || "Added by you"}
+                    {item.source === "Added manually by user"
+                      ? t("Added manually by user")
+                      : item.source || t("Added by you")}
                   </span>
                 )}
                 <time>{dateLabel(item.created_at)}</time>
@@ -947,20 +992,24 @@ export function MemoryPage() {
                     );
                   }}
                 >
-                  <Check size={14} /> Confirm memory
+                  <Check size={14} /> {t("Confirm memory")}{" "}
                 </Button>
               )}
               <div className="memory-card-bottom">
-                <span>Version {item.version}</span>
+                <span>
+                  {t("Version")} {item.version}
+                </span>
                 <RowActions
                   onEdit={() => setEdit(item)}
                   onDelete={() => {
                     if (
                       confirm(
-                        "Delete this memory? It will stop being used for future recall.",
+                        t(
+                          "Delete this memory? It will stop being used for future recall.",
+                        ),
                       )
                     )
-                      void action.run(() => remove("memory", item));
+                      void action.run(() => remove("memory", item, t));
                   }}
                 />
               </div>
@@ -980,6 +1029,7 @@ export function MemoryPage() {
 }
 
 export function CalendarPage() {
+  const { t, locale, timeLabel } = useI18n();
   const query = useRecords("calendar");
   const [showGoogle, setShowGoogle] = useState(false);
   const [month, setMonth] = useState(() => new Date());
@@ -1014,7 +1064,7 @@ export function CalendarPage() {
   const calendarRecords: RecordItem[] = showGoogle
     ? (google.data || []).map((event) => ({
         id: event.id,
-        title: event.summary || "Untitled event",
+        title: event.summary || t("Untitled event"),
         content: event.description,
         start_at: event.start?.dateTime || event.start?.date,
         end_at: event.end?.dateTime || event.end?.date,
@@ -1041,9 +1091,9 @@ export function CalendarPage() {
   return (
     <>
       <PageHeader
-        eyebrow="TIME, THOUGHTFULLY SPENT"
-        title="Make room in your day."
-        subtitle="A little structure, a little breathing room."
+        eyebrow={t("TIME, THOUGHTFULLY SPENT")}
+        title={t("Make room in your day.")}
+        subtitle={t("A little structure, a little breathing room.")}
       >
         <Button
           variant="secondary"
@@ -1052,10 +1102,10 @@ export function CalendarPage() {
           }}
           disabled={action.pending}
         >
-          <Network size={15} /> Connect Google Calendar
+          <Network size={15} /> {t("Connect Google Calendar")}{" "}
         </Button>
         <Button onClick={() => setEdit("new")}>
-          <Plus size={16} /> New event
+          <Plus size={16} /> {t("New event")}{" "}
         </Button>
       </PageHeader>
       <div className="toolbar">
@@ -1064,19 +1114,19 @@ export function CalendarPage() {
             className={!showGoogle ? "selected" : ""}
             onClick={() => setShowGoogle(false)}
           >
-            PersonalOS calendar
+            {t("PersonalOS calendar")}{" "}
           </button>
           <button
             className={showGoogle ? "selected" : ""}
             onClick={() => setShowGoogle(true)}
           >
-            Google Calendar
+            {t("Google Calendar")}{" "}
           </button>
         </div>
         <span className="small-text">
           {showGoogle
-            ? "Live provider events · OAuth required"
-            : "Local workspace events"}
+            ? t("Live provider events · OAuth required")
+            : t("Local workspace events")}
         </span>
       </div>
       <Failure error={showGoogle ? google.error : query.error} />
@@ -1085,7 +1135,7 @@ export function CalendarPage() {
         <section className="panel calendar-panel">
           <div className="calendar-controls">
             <h2>
-              {month.toLocaleDateString("en", {
+              {month.toLocaleDateString(locale, {
                 month: "long",
                 year: "numeric",
               })}
@@ -1096,11 +1146,11 @@ export function CalendarPage() {
                 size="sm"
                 onClick={() => setMonth(new Date())}
               >
-                Today
+                {t("Today")}{" "}
               </Button>
               <button
                 className="icon-button"
-                aria-label="Previous month"
+                aria-label={t("Previous month")}
                 onClick={() =>
                   setMonth(
                     new Date(month.getFullYear(), month.getMonth() - 1, 1),
@@ -1111,7 +1161,7 @@ export function CalendarPage() {
               </button>
               <button
                 className="icon-button"
-                aria-label="Next month"
+                aria-label={t("Next month")}
                 onClick={() =>
                   setMonth(
                     new Date(month.getFullYear(), month.getMonth() + 1, 1),
@@ -1123,9 +1173,14 @@ export function CalendarPage() {
             </div>
           </div>
           <div className="calendar-weekdays">
-            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-              <span key={d}>{d}</span>
-            ))}
+            {Array.from({ length: 7 }, (_, index) => {
+              const day = new Date(2024, 0, index + 1);
+              return (
+                <span key={index}>
+                  {day.toLocaleDateString(locale, { weekday: "short" })}
+                </span>
+              );
+            })}
           </div>
           {query.isPending ? (
             <Loading />
@@ -1147,7 +1202,11 @@ export function CalendarPage() {
                     {events.slice(0, 2).map((e) => (
                       <small key={e.id}>{e.title}</small>
                     ))}
-                    {events.length > 2 && <em>+{events.length - 2} more</em>}
+                    {events.length > 2 && (
+                      <em>
+                        {t("+{count} more", { count: events.length - 2 })}
+                      </em>
+                    )}
                   </button>
                 );
               })}
@@ -1155,9 +1214,9 @@ export function CalendarPage() {
           )}
         </section>
         <section className="panel day-agenda">
-          <span className="eyebrow">YOUR DAY</span>
+          <span className="eyebrow">{t("YOUR DAY")}</span>
           <h2>
-            {new Date(selected).toLocaleDateString("en", {
+            {new Date(selected).toLocaleDateString(locale, {
               weekday: "long",
               month: "short",
               day: "numeric",
@@ -1179,13 +1238,17 @@ export function CalendarPage() {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    Open in Google Calendar <ArrowUpRight size={13} />
+                    {t("Open in Google Calendar")} <ArrowUpRight size={13} />
                   </a>
                 )}
                 <RowActions
                   onEdit={() => setEdit(item)}
                   onDelete={() => {
-                    if (confirm(`Delete “${item.title}”?`))
+                    if (
+                      confirm(
+                        t("Delete “{title}”?", { title: item.title || "" }),
+                      )
+                    )
                       void action.run(async () => {
                         if (item.provider === "google") {
                           await api(
@@ -1193,9 +1256,11 @@ export function CalendarPage() {
                             { method: "DELETE" },
                           );
                           alert(
-                            "Google Calendar deletion is awaiting your approval in Activity & approvals.",
+                            t(
+                              "Google Calendar deletion is awaiting your approval in Activity & approvals.",
+                            ),
                           );
-                        } else await remove("calendar", item);
+                        } else await remove("calendar", item, t);
                       });
                   }}
                 />
@@ -1206,7 +1271,9 @@ export function CalendarPage() {
                     onClick={() => {
                       if (
                         confirm(
-                          "Request undo for this external event? A deletion approval will be created.",
+                          t(
+                            "Request undo for this external event? A deletion approval will be created.",
+                          ),
                         )
                       )
                         void action.run(async () => {
@@ -1215,12 +1282,14 @@ export function CalendarPage() {
                             { method: "POST" },
                           );
                           alert(
-                            "Undo request is awaiting approval in Activity & approvals.",
+                            t(
+                              "Undo request is awaiting approval in Activity & approvals.",
+                            ),
                           );
                         });
                     }}
                   >
-                    <RefreshCw size={12} /> Request undo
+                    <RefreshCw size={12} /> {t("Request undo")}{" "}
                   </Button>
                 )}
               </article>
@@ -1228,15 +1297,17 @@ export function CalendarPage() {
           ) : (
             <Empty
               icon={<CalendarDays size={26} />}
-              title="A clear stretch of time."
-              text="There are no events on this day. Add something intentional."
+              title={t("A clear stretch of time.")}
+              text={t(
+                "There are no events on this day. Add something intentional.",
+              )}
               action={
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setEdit("new")}
                 >
-                  <Plus size={14} /> Add event
+                  <Plus size={14} /> {t("Add event")}{" "}
                 </Button>
               }
             />
@@ -1244,8 +1315,10 @@ export function CalendarPage() {
         </section>
       </div>
       <div className="subtle-tip">
-        <ShieldCheck size={15} /> Connected calendar writes require approval.
-        Local events stay in your workspace.
+        <ShieldCheck size={15} />{" "}
+        {t(
+          "Connected calendar writes require approval. Local events stay in your workspace.",
+        )}{" "}
       </div>
       {edit && (
         <ResourceEditor
@@ -1258,6 +1331,7 @@ export function CalendarPage() {
   );
 }
 export function AutomationsPage() {
+  const { t, dateLabel, timeLabel } = useI18n();
   const query = useRecords("automations");
   const action = useAction();
   const [edit, setEdit] = useState<RecordItem | "new">();
@@ -1272,12 +1346,12 @@ export function AutomationsPage() {
   return (
     <>
       <PageHeader
-        eyebrow="LET THE LITTLE THINGS RUN"
-        title="A little help, on repeat."
-        subtitle="Thoughtful routines that work quietly in the background."
+        eyebrow={t("LET THE LITTLE THINGS RUN")}
+        title={t("A little help, on repeat.")}
+        subtitle={t("Thoughtful routines that work quietly in the background.")}
       >
         <Button onClick={() => setEdit("new")}>
-          <Plus size={16} /> Create automation
+          <Plus size={16} /> {t("Create automation")}{" "}
         </Button>
       </PageHeader>
       <div className="automation-intro">
@@ -1285,14 +1359,15 @@ export function AutomationsPage() {
           <Zap size={25} />
         </span>
         <div>
-          <h3>From intention to a dependable routine.</h3>
+          <h3>{t("From intention to a dependable routine.")}</h3>
           <p>
-            Schedule a briefing or an assistant task. Your independent worker
-            keeps track of runs, retries and approvals.
+            {t(
+              "Schedule a briefing or an assistant task. Your independent worker keeps track of runs, retries and approvals.",
+            )}{" "}
           </p>
         </div>
         <span className="outline-tag">
-          <ShieldCheck size={13} /> Permission aware
+          <ShieldCheck size={13} /> {t("Permission aware")}{" "}
         </span>
       </div>
       <Failure error={query.error} />
@@ -1303,11 +1378,13 @@ export function AutomationsPage() {
         <section className="panel">
           <Empty
             icon={<Zap size={29} strokeWidth={1.3} />}
-            title="Let a routine carry a little weight."
-            text="Create your first automation. A morning briefing is a good place to start."
+            title={t("Let a routine carry a little weight.")}
+            text={t(
+              "Create your first automation. A morning briefing is a good place to start.",
+            )}
             action={
               <Button variant="secondary" onClick={() => setEdit("new")}>
-                <Plus size={15} /> Create a routine
+                <Plus size={15} /> {t("Create a routine")}{" "}
               </Button>
             }
           />
@@ -1328,22 +1405,22 @@ export function AutomationsPage() {
                 <div className="automation-meta">
                   {item.extra?.kind === "briefing" && (
                     <span>
-                      <FileText size={13} /> Daily briefing
+                      <FileText size={13} /> {t("Daily briefing")}{" "}
                     </span>
                   )}
                   <span>
                     <Clock3 size={13} />
-                    <code>{item.cron || "One time"}</code> · {item.timezone}
+                    <code>{item.cron || t("One time")}</code> · {item.timezone}
                   </span>
                   <span>
-                    Next:{" "}
+                    {t("Next:")}{" "}
                     {item.next_run_at
                       ? `${dateLabel(item.next_run_at)} ${timeLabel(item.next_run_at)}`
-                      : "Not scheduled"}
+                      : t("Not scheduled")}
                   </span>
                 </div>
                 <Link href="/activity" className="text-link">
-                  <History size={13} /> View execution history
+                  <History size={13} /> {t("View execution history")}{" "}
                 </Link>
               </div>
               <div className="automation-actions">
@@ -1355,8 +1432,8 @@ export function AutomationsPage() {
                   }
                   aria-label={
                     item.status === "active"
-                      ? "Pause automation"
-                      : "Resume automation"
+                      ? t("Pause automation")
+                      : t("Resume automation")
                   }
                   onClick={() => {
                     void status(
@@ -1374,7 +1451,7 @@ export function AutomationsPage() {
                 <button
                   className="icon-button"
                   disabled={action.pending}
-                  aria-label="Retry automation"
+                  aria-label={t("Retry automation")}
                   onClick={() => {
                     void action.run(() =>
                       api(`/automations/${item.id}/retry`, {
@@ -1388,19 +1465,21 @@ export function AutomationsPage() {
                 </button>
                 <button
                   className="icon-button"
-                  aria-label="Edit automation"
+                  aria-label={t("Edit automation")}
                   onClick={() => setEdit(item)}
                 >
                   <Edit3 size={16} />
                 </button>
                 <button
                   className="icon-button delete"
-                  aria-label="Cancel automation"
+                  aria-label={t("Cancel automation")}
                   disabled={action.pending || item.status === "cancelled"}
                   onClick={() => {
                     if (
                       confirm(
-                        "Cancel this automation? It will no longer be scheduled.",
+                        t(
+                          "Cancel this automation? It will no longer be scheduled.",
+                        ),
                       )
                     )
                       void status(item, "cancelled");
@@ -1424,6 +1503,7 @@ export function AutomationsPage() {
   );
 }
 export function IntegrationsPage() {
+  const { t } = useI18n();
   const query = useRecords("integrations");
   const [edit, setEdit] = useState(false);
   const [tools, setTools] = useState<{
@@ -1454,12 +1534,12 @@ export function IntegrationsPage() {
   return (
     <>
       <PageHeader
-        eyebrow="CONNECTED, ON YOUR TERMS"
-        title="Bring your world together."
-        subtitle="Useful tools. Clear permissions. You stay in charge."
+        eyebrow={t("CONNECTED, ON YOUR TERMS")}
+        title={t("Bring your world together.")}
+        subtitle={t("Useful tools. Clear permissions. You stay in charge.")}
       >
         <Button onClick={() => setEdit(true)}>
-          <Plus size={16} /> Add MCP server
+          <Plus size={16} /> {t("Add MCP server")}{" "}
         </Button>
       </PageHeader>
       <div className="integration-grid">
@@ -1467,21 +1547,22 @@ export function IntegrationsPage() {
           <div className="integration-brand google-icon">
             <CalendarDays size={25} />
           </div>
-          <span className="outline-tag">OAuth 2.0</span>
-          <h2>Google Calendar</h2>
+          <span className="outline-tag">{t("OAuth 2.0")}</span>
+          <h2>{t("Google Calendar")}</h2>
           <p>
-            Bring your schedule into focus. View events, check conflicts, and
-            approve changes before they happen.
+            {t(
+              "Bring your schedule into focus. View events, check conflicts, and approve changes before they happen.",
+            )}{" "}
           </p>
           <ul>
             <li>
-              <Check size={14} /> Secure provider authorization
+              <Check size={14} /> {t("Secure provider authorization")}{" "}
             </li>
             <li>
-              <Check size={14} /> No account password shared
+              <Check size={14} /> {t("No account password shared")}{" "}
             </li>
             <li>
-              <Check size={14} /> External writes require approval
+              <Check size={14} /> {t("External writes require approval")}{" "}
             </li>
           </ul>
           <Button
@@ -1491,34 +1572,40 @@ export function IntegrationsPage() {
             }}
             disabled={action.pending}
           >
-            Connect calendar <ArrowUpRight size={15} />
+            {t("Connect calendar")} <ArrowUpRight size={15} />
           </Button>
         </section>
         <section className="panel integration-feature">
           <div className="integration-brand">
             <Network size={25} />
           </div>
-          <span className="outline-tag">MCP</span>
-          <h2>A workspace that can do more.</h2>
+          <span className="outline-tag">{t("MCP")}</span>
+          <h2>{t("A workspace that can do more.")}</h2>
           <p>
-            Connect trusted tool servers using the Model Context Protocol.
-            Review the available tools and grant only the permissions you need.
+            {t(
+              "Connect trusted tool servers using the Model Context Protocol. Review the available tools and grant only the permissions you need.",
+            )}{" "}
           </p>
           <div className="integration-caution">
             <LockKeyhole size={16} />
             <span>
-              New servers start untrusted. Connecting doesn’t grant permission
-              to execute.
+              {t(
+                "New servers start untrusted. Connecting doesn’t grant permission to execute.",
+              )}{" "}
             </span>
           </div>
           <Button variant="ghost" onClick={() => setEdit(true)}>
-            Add a tool server <Plus size={14} />
+            {t("Add a tool server")} <Plus size={14} />
           </Button>
         </section>
       </div>
       <div className="section-title">
-        <h2>Your connections</h2>
-        <span>{query.data?.length || 0} connected configurations</span>
+        <h2>{t("Your connections")}</h2>
+        <span>
+          {t("{count} connected configurations", {
+            count: query.data?.length || 0,
+          })}
+        </span>
       </div>
       <Failure error={query.error} />
       <ErrorText text={action.error} />
@@ -1528,8 +1615,10 @@ export function IntegrationsPage() {
         ) : !query.data?.length ? (
           <Empty
             icon={<Network size={27} />}
-            title="An open door, when you're ready."
-            text="No services are connected yet. Your workspace works locally while you choose what to connect."
+            title={t("An open door, when you're ready.")}
+            text={t(
+              "No services are connected yet. Your workspace works locally while you choose what to connect.",
+            )}
           />
         ) : (
           query.data.map((item) => (
@@ -1545,7 +1634,8 @@ export function IntegrationsPage() {
                 <h3>{item.title}</h3>
                 <p>{item.url || item.kind}</p>
                 <small>
-                  Permissions: {item.permissions?.join(", ") || "None granted"}
+                  {t("Permissions:")}{" "}
+                  {item.permissions?.join(", ") || t("None granted")}
                 </small>
               </div>
               <Badge
@@ -1561,7 +1651,7 @@ export function IntegrationsPage() {
                       void loadTools(item);
                     }}
                   >
-                    Review tools
+                    {t("Review tools")}{" "}
                   </Button>
                   <Button
                     size="sm"
@@ -1570,7 +1660,11 @@ export function IntegrationsPage() {
                     onClick={() => {
                       if (
                         confirm(
-                          `${item.trusted ? "Revoke trust for" : "Trust"} this server? Review its origin before authorizing.`,
+                          t(
+                            item.trusted
+                              ? "Revoke trust for this server? Review its origin before authorizing."
+                              : "Trust this server? Review its origin before authorizing.",
+                          ),
                         )
                       )
                         void action.run(() =>
@@ -1584,7 +1678,7 @@ export function IntegrationsPage() {
                         );
                     }}
                   >
-                    {item.trusted ? "Revoke trust" : "Trust server"}
+                    {item.trusted ? t("Revoke trust") : t("Trust server")}
                   </Button>
                 </>
               )}
@@ -1595,7 +1689,9 @@ export function IntegrationsPage() {
                   onClick={() => {
                     if (
                       confirm(
-                        "Disconnect Google Calendar and revoke this authorization?",
+                        t(
+                          "Disconnect Google Calendar and revoke this authorization?",
+                        ),
                       )
                     )
                       void action.run(async () => {
@@ -1603,20 +1699,22 @@ export function IntegrationsPage() {
                           method: "POST",
                         });
                         alert(
-                          "Disconnection awaits your approval in Activity & approvals.",
+                          t(
+                            "Disconnection awaits your approval in Activity & approvals.",
+                          ),
                         );
                       });
                   }}
                 >
-                  Disconnect
+                  {t("Disconnect")}{" "}
                 </Button>
               )}
               <button
                 className="icon-button delete"
-                aria-label="Remove connection"
+                aria-label={t("Remove connection")}
                 onClick={() => {
-                  if (confirm("Remove this connection?"))
-                    void action.run(() => remove("integrations", item));
+                  if (confirm(t("Remove this connection?")))
+                    void action.run(() => remove("integrations", item, t));
                 }}
               >
                 <Trash2 size={16} />
@@ -1637,18 +1735,21 @@ export function IntegrationsPage() {
             aria-labelledby="tool-heading"
           >
             <div className="modal-head">
-              <h2 id="tool-heading">Tools · {tools.item.title}</h2>
+              <h2 id="tool-heading">
+                {t("Tools ·")} {tools.item.title}
+              </h2>
               <button
                 className="icon-button"
-                aria-label="Close tools"
+                aria-label={t("Close tools")}
                 onClick={() => setTools(undefined)}
               >
                 <X size={20} />
               </button>
             </div>
             <p>
-              Read the server’s tool descriptions before granting permission.
-              Descriptions come from the server and are untrusted content.
+              {t(
+                "Read the server’s tool descriptions before granting permission. Descriptions come from the server and are untrusted content.",
+              )}{" "}
             </p>
             <div className="tool-review-list">
               {tools.tools.map((tool) => (
@@ -1686,9 +1787,11 @@ export function IntegrationsPage() {
                     />
                     <strong>{String(tool.name)}</strong>
                   </label>
-                  <p>{String(tool.description || "No description supplied")}</p>
+                  <p>
+                    {String(tool.description || t("No description supplied"))}
+                  </p>
                   <details>
-                    <summary>Input schema</summary>
+                    <summary>{t("Input schema")}</summary>
                     <pre>
                       {JSON.stringify(
                         tool.inputSchema || tool.input_schema,
@@ -1701,12 +1804,12 @@ export function IntegrationsPage() {
               ))}
             </div>
             <label>
-              Call a granted tool
+              {t("Call a granted tool")}{" "}
               <select
                 value={selectedTool}
                 onChange={(e) => setSelectedTool(e.target.value)}
               >
-                <option value="">Select tool…</option>
+                <option value="">{t("Select tool…")}</option>
                 {tools.tools.map((t) => (
                   <option key={String(t.name)} value={String(t.name)}>
                     {String(t.name)}
@@ -1715,7 +1818,7 @@ export function IntegrationsPage() {
               </select>
             </label>
             <label>
-              Arguments (JSON)
+              {t("Arguments (JSON)")}{" "}
               <textarea
                 rows={4}
                 value={argumentsText}
@@ -1744,7 +1847,7 @@ export function IntegrationsPage() {
                 });
               }}
             >
-              Request tool execution <ArrowUpRight size={15} />
+              {t("Request tool execution")} <ArrowUpRight size={15} />
             </Button>
             {toolResult !== undefined && (
               <pre className="tool-result">
@@ -1759,6 +1862,7 @@ export function IntegrationsPage() {
 }
 
 export function ActivityPage() {
+  const { t, dateLabel, timeLabel } = useI18n();
   const query = useRecords("activity");
   const approvals = useRecords("approvals");
   const decisions = {
@@ -1772,9 +1876,11 @@ export function ActivityPage() {
   return (
     <>
       <PageHeader
-        eyebrow="TRANSPARENCY, BUILT IN"
-        title="Nothing behind the scenes."
-        subtitle="Review requests, follow executions, and see what your assistant did."
+        eyebrow={t("TRANSPARENCY, BUILT IN")}
+        title={t("Nothing behind the scenes.")}
+        subtitle={t(
+          "Review requests, follow executions, and see what your assistant did.",
+        )}
       >
         <Button
           variant="secondary"
@@ -1784,7 +1890,7 @@ export function ActivityPage() {
             void decisions.refetch();
           }}
         >
-          <RefreshCw size={15} /> Refresh
+          <RefreshCw size={15} /> {t("Refresh")}{" "}
         </Button>
       </PageHeader>
       <ErrorText text={action.error} />
@@ -1792,9 +1898,11 @@ export function ActivityPage() {
         <section className="approvals-section">
           <div className="section-title">
             <h2>
-              <ShieldCheck size={18} /> Waiting for your say
+              <ShieldCheck size={18} /> {t("Waiting for your say")}{" "}
             </h2>
-            <span>{pending.length} pending</span>
+            <span>
+              {pending.length} {t("pending")}
+            </span>
           </div>
           {pending.map((item) => (
             <article className="panel approval-card" key={item.id}>
@@ -1803,9 +1911,11 @@ export function ActivityPage() {
                   <ShieldCheck size={22} />
                 </span>
                 <div>
-                  <h3>{item.title || "Tool execution request"}</h3>
+                  <h3>{item.title || t("Tool execution request")}</h3>
                   <p>
-                    Review the exact parameters before allowing this action.
+                    {t(
+                      "Review the exact parameters before allowing this action.",
+                    )}{" "}
                   </p>
                 </div>
                 <Badge status="pending" />
@@ -1819,8 +1929,8 @@ export function ActivityPage() {
               </pre>
               <div className="approval-buttons">
                 <span>
-                  <LockKeyhole size={13} /> Your approval is bound to these
-                  arguments.
+                  <LockKeyhole size={13} />{" "}
+                  {t("Your approval is bound to these arguments.")}{" "}
                 </span>
                 <Button
                   variant="secondary"
@@ -1838,7 +1948,7 @@ export function ActivityPage() {
                     );
                   }}
                 >
-                  Reject
+                  {t("Reject")}{" "}
                 </Button>
                 <Button
                   size="sm"
@@ -1855,7 +1965,7 @@ export function ActivityPage() {
                     );
                   }}
                 >
-                  <Check size={14} /> Approve action
+                  <Check size={14} /> {t("Approve action")}{" "}
                 </Button>
               </div>
             </article>
@@ -1864,22 +1974,22 @@ export function ActivityPage() {
       )}
       <div className="toolbar">
         <div className="tabs">
-          {["all", "approvals", "decisions"].map((t) => (
+          {["all", "approvals", "decisions"].map((value) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={tab === t ? "selected" : ""}
+              key={value}
+              onClick={() => setTab(value)}
+              className={tab === value ? "selected" : ""}
             >
-              {t === "all"
-                ? "Execution history"
-                : t === "approvals"
-                  ? "All approvals"
-                  : "Routing decisions"}
+              {value === "all"
+                ? t("Execution history")
+                : value === "approvals"
+                  ? t("All approvals")
+                  : t("Routing decisions")}
             </button>
           ))}
         </div>
         <span className="small-text">
-          <ShieldCheck size={13} /> An accountable assistant
+          <ShieldCheck size={13} /> {t("An accountable assistant")}{" "}
         </span>
       </div>
       <Failure
@@ -1909,8 +2019,10 @@ export function ActivityPage() {
           )?.length ? (
           <Empty
             icon={<History size={28} strokeWidth={1.3} />}
-            title="A clear, quiet record."
-            text="Actions, permissions and execution outcomes will appear here as you use your workspace."
+            title={t("A clear, quiet record.")}
+            text={t(
+              "Actions, permissions and execution outcomes will appear here as you use your workspace.",
+            )}
           />
         ) : (
           <div className="activity-list">
@@ -1936,11 +2048,11 @@ export function ActivityPage() {
                       item.action ||
                       item.action_type ||
                       item.kind ||
-                      "Execution"}
+                      t("Execution")}
                   </h3>
                   <p>{item.content || item.summary || item.error}</p>
                   <details>
-                    <summary>View details</summary>
+                    <summary>{t("View details")}</summary>
                     <pre>{JSON.stringify(item, null, 2)}</pre>
                   </details>
                 </div>
@@ -1960,6 +2072,7 @@ export function ActivityPage() {
 }
 
 export function SettingsPage({ user }: { user: User }) {
+  const { t } = useI18n();
   const query = useAIConfiguration();
   const action = useAction();
   const [saved, setSaved] = useState(false);
@@ -2011,16 +2124,18 @@ export function SettingsPage({ user }: { user: User }) {
   return (
     <>
       <PageHeader
-        eyebrow="YOUR WORKSPACE, YOUR WAY"
-        title="Make it feel like you."
-        subtitle="Your model, your privacy, your preferences."
+        eyebrow={t("YOUR WORKSPACE, YOUR WAY")}
+        title={t("Make it feel like you.")}
+        subtitle={t("Your model, your privacy, your preferences.")}
       />
       <AISetupNotice full />
       <ErrorText text={action.error} />
       {saved && (
         <div className="success-banner" role="status">
           <CheckCircle2 size={17} />{" "}
-          配置已保存。保存不代表连接已验证，请分别测试聊天和向量模型。
+          {t(
+            "Configuration saved. Saving does not verify connectivity; test the chat and embedding connections separately.",
+          )}{" "}
         </div>
       )}
       {query.isPending ? (
@@ -2078,19 +2193,22 @@ export function SettingsPage({ user }: { user: User }) {
                     <Brain size={21} />
                   </span>
                   <div>
-                    <h2>Memory & preferences</h2>
+                    <h2>{t("Memory & preferences")}</h2>
                     <p>
-                      Choose how your workspace remembers and organizes your
-                      day.
+                      {t(
+                        "Choose how your workspace remembers and organizes your day.",
+                      )}{" "}
                     </p>
                   </div>
                 </div>
+                <LanguageSelector />
                 <div className="toggle-field">
                   <div>
-                    <strong>Suggest long-term memories</strong>
+                    <strong>{t("Suggest long-term memories")}</strong>
                     <p>
-                      Your assistant can propose useful context. You confirm
-                      what gets saved.
+                      {t(
+                        "Your assistant can propose useful context. You confirm what gets saved.",
+                      )}{" "}
                     </p>
                   </div>
                   <input
@@ -2098,19 +2216,19 @@ export function SettingsPage({ user }: { user: User }) {
                     name="memory_enabled"
                     className="switch"
                     defaultChecked={query.data.memory_enabled ?? true}
-                    aria-label="Suggest long-term memories"
+                    aria-label={t("Suggest long-term memories")}
                   />
                 </div>
                 <div className="form-grid">
                   <label>
-                    Display name
+                    {t("Display name")}{" "}
                     <input
                       name="name"
                       defaultValue={String(query.data.name || user.name || "")}
                     />
                   </label>
                   <label>
-                    Time zone
+                    {t("Time zone")}{" "}
                     <input
                       name="timezone"
                       defaultValue={String(
@@ -2126,8 +2244,8 @@ export function SettingsPage({ user }: { user: User }) {
               <div className="settings-save">
                 <span>
                   {saved
-                    ? "Changes saved"
-                    : "Changes apply to your account only."}
+                    ? t("Changes saved")
+                    : t("Changes apply to your account only.")}
                 </span>
                 <Button
                   type="submit"
@@ -2138,7 +2256,7 @@ export function SettingsPage({ user }: { user: User }) {
                   ) : (
                     <Check size={15} />
                   )}{" "}
-                  Save changes
+                  {t("Save changes")}{" "}
                 </Button>
               </div>
             </form>
@@ -2146,34 +2264,36 @@ export function SettingsPage({ user }: { user: User }) {
               <section className="panel privacy-card">
                 <ShieldCheck size={27} strokeWidth={1.3} />
                 <h2>
-                  Private by design.
-                  <br />
-                  Controlled by you.
+                  {t("Private by design.")} <br />
+                  {t("Controlled by you.")}{" "}
                 </h2>
                 <p>
-                  Your assistant uses your context to help you. You decide what
-                  it knows and what it can do.
+                  {t(
+                    "Your assistant uses your context to help you. You decide what it knows and what it can do.",
+                  )}{" "}
                 </p>
                 <ul>
                   <li>
-                    <Check size={13} /> User-isolated workspace data
+                    <Check size={13} /> {t("User-isolated workspace data")}{" "}
                   </li>
                   <li>
-                    <Check size={13} /> Keys held on the server
+                    <Check size={13} /> {t("Keys held on the server")}{" "}
                   </li>
                   <li>
-                    <Check size={13} /> Explicit action approvals
+                    <Check size={13} /> {t("Explicit action approvals")}{" "}
                   </li>
                   <li>
-                    <Check size={13} /> Export and delete your memories
+                    <Check size={13} />{" "}
+                    {t("Export and delete your memories")}{" "}
                   </li>
                 </ul>
               </section>
               <section className="panel data-card">
-                <h3>Your data travels with you.</h3>
+                <h3>{t("Your data travels with you.")}</h3>
                 <p>
-                  Download your workspace as a JSON archive. API keys and
-                  authorization tokens are excluded.
+                  {t(
+                    "Download your workspace as a JSON archive. API keys and authorization tokens are excluded.",
+                  )}{" "}
                 </p>
                 <Button
                   variant="secondary"
@@ -2182,25 +2302,26 @@ export function SettingsPage({ user }: { user: User }) {
                     void action.run(downloadExport);
                   }}
                 >
-                  <ArrowDownToLine size={14} /> Export workspace
+                  <ArrowDownToLine size={14} /> {t("Export workspace")}{" "}
                 </Button>
                 <div className="data-divider" />
-                <h3>Start a fresh memory.</h3>
+                <h3>{t("Start a fresh memory.")}</h3>
                 <p>
-                  Review and remove individual memories in your memory center.
-                  Deletions require your approval.
+                  {t(
+                    "Review and remove individual memories in your memory center. Deletions require your approval.",
+                  )}{" "}
                 </p>
                 <Button variant="ghost" size="sm" asChild>
                   <Link href="/memory">
-                    <Brain size={14} /> Manage memories
+                    <Brain size={14} /> {t("Manage memories")}{" "}
                   </Link>
                 </Button>
                 <div className="data-divider" />
-                <h3>Close your account.</h3>
+                <h3>{t("Close your account.")}</h3>
                 <p>
-                  Request deletion of your workspace, memories, conversations
-                  and saved credentials. Review and approve the request in
-                  Activity before deletion takes place.
+                  {t(
+                    "Request deletion of your workspace, memories, conversations and saved credentials. Review and approve the request in Activity before deletion takes place.",
+                  )}{" "}
                 </p>
                 <Button
                   type="button"
@@ -2210,7 +2331,9 @@ export function SettingsPage({ user }: { user: User }) {
                   onClick={() => {
                     if (
                       prompt(
-                        "Type DELETE to request permanent account deletion. You will still need to approve the exact request in Activity.",
+                        t(
+                          "Type DELETE to request permanent account deletion. You will still need to approve the exact request in Activity.",
+                        ),
                       ) === "DELETE"
                     )
                       void action.run(async () => {
@@ -2219,12 +2342,14 @@ export function SettingsPage({ user }: { user: User }) {
                           body: JSON.stringify({ confirmation: "DELETE" }),
                         });
                         alert(
-                          "Your account deletion request is awaiting approval in Activity & approvals.",
+                          t(
+                            "Your account deletion request is awaiting approval in Activity & approvals.",
+                          ),
                         );
                       });
                   }}
                 >
-                  <Trash2 size={13} /> Request account deletion
+                  <Trash2 size={13} /> {t("Request account deletion")}{" "}
                 </Button>
               </section>
               <div className="account-note">
@@ -2233,7 +2358,7 @@ export function SettingsPage({ user }: { user: User }) {
                 </span>
                 <div>
                   <strong>{user.email}</strong>
-                  <small>Signed in to your personal account</small>
+                  <small>{t("Signed in to your personal account")}</small>
                 </div>
               </div>
             </aside>
@@ -2262,6 +2387,7 @@ interface StreamEvent {
   status?: string;
 }
 export function ChatPage() {
+  const { t, dateLabel } = useI18n();
   const client = useQueryClient();
   const sessions = useQuery({
     queryKey: ["sessions"],
@@ -2296,7 +2422,7 @@ export function ChatPage() {
     if (!input.trim() || pending) return;
     if (!settings.data?.chat_configured || settings.error) {
       setError(
-        "请先在设置页填写并保存聊天模型的 Model ID、Base URL 和 API Key。输入内容已保留。",
+        "Complete and save the chat Model ID, Base URL and API key in Settings first. Your input has been kept.",
       );
       return;
     }
@@ -2398,12 +2524,12 @@ export function ChatPage() {
   return (
     <>
       <PageHeader
-        eyebrow="A THOUGHTFUL COLLABORATOR"
-        title="A little perspective helps."
-        subtitle="Plan something, ask a question, or think out loud."
+        eyebrow={t("A THOUGHTFUL COLLABORATOR")}
+        title={t("A little perspective helps.")}
+        subtitle={t("Plan something, ask a question, or think out loud.")}
       >
         <Button variant="secondary" onClick={newChat} disabled={pending}>
-          <Plus size={15} /> New conversation
+          <Plus size={15} /> {t("New conversation")}{" "}
         </Button>
       </PageHeader>
       <div className="chat-layout">
@@ -2414,14 +2540,14 @@ export function ChatPage() {
             </span>
             <div>
               <strong>PersonalOS</strong>
-              <span>Your personal assistant</span>
+              <span>{t("Your personal assistant")}</span>
             </div>
             <label className="model-picker">
-              <span className="sr-only">Model</span>
+              <span className="sr-only">{t("Model")}</span>
               <input
-                aria-label="Model ID"
+                aria-label={t("Model ID")}
                 placeholder={String(
-                  settings.data?.model || "Model not configured",
+                  settings.data?.model || t("Model not configured"),
                 )}
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
@@ -2444,19 +2570,23 @@ export function ChatPage() {
                 <div className="welcome-symbol">
                   <Sparkles size={34} strokeWidth={1.2} />
                 </div>
-                <span className="eyebrow">A LITTLE MORE HEADSPACE</span>
-                <h2>What’s on your mind?</h2>
+                <span className="eyebrow">{t("A LITTLE MORE HEADSPACE")}</span>
+                <h2>{t("What’s on your mind?")}</h2>
                 <p>
-                  There’s no perfect way to start.
-                  <br />
-                  Bring a thought, a task, or a little everyday chaos.
+                  {t("There’s no perfect way to start.")} <br />
+                  {t(
+                    "Bring a thought, a task, or a little everyday chaos.",
+                  )}{" "}
                 </p>
                 <div className="chat-suggestions">
                   {[
-                    { icon: CalendarDays, text: "Help me plan my day" },
-                    { icon: Brain, text: "What do you remember about me?" },
-                    { icon: CheckCircle2, text: "Help me break down a task" },
-                    { icon: Leaf, text: "What should I focus on next?" },
+                    { icon: CalendarDays, text: t("Help me plan my day") },
+                    { icon: Brain, text: t("What do you remember about me?") },
+                    {
+                      icon: CheckCircle2,
+                      text: t("Help me break down a task"),
+                    },
+                    { icon: Leaf, text: t("What should I focus on next?") },
                   ].map(({ icon: Icon, text }) => (
                     <button onClick={() => setInput(text)} key={text}>
                       <Icon size={17} />
@@ -2467,10 +2597,12 @@ export function ChatPage() {
                 </div>
                 {settings.data && !settings.data.chat_configured && (
                   <div className="chat-setup-note">
-                    <LockKeyhole size={15} /> 先填写聊天模型的 Model ID、Base
-                    URL 和 API Key：{" "}
+                    <LockKeyhole size={15} />{" "}
+                    {t(
+                      "First fill in your chat Model ID, Base URL and API key:",
+                    )}{" "}
                     <Link href="/settings?setup=1#chat-configuration">
-                      去配置聊天模型
+                      {t("Configure chat model")}{" "}
                     </Link>
                   </div>
                 )}
@@ -2485,12 +2617,12 @@ export function ChatPage() {
                     {message.role === "assistant" ? (
                       <Sparkles size={17} />
                     ) : (
-                      "You"
+                      t("You")
                     )}
                   </span>
                   <div>
                     <strong>
-                      {message.role === "assistant" ? "PersonalOS" : "You"}
+                      {message.role === "assistant" ? "PersonalOS" : t("You")}
                     </strong>
                     <div className="message-content">
                       {message.content ||
@@ -2502,7 +2634,7 @@ export function ChatPage() {
                           </span>
                         ) : (
                           <span className="small-text">
-                            No answer was generated.
+                            {t("No answer was generated.")}{" "}
                           </span>
                         ))}
                     </div>
@@ -2515,14 +2647,19 @@ export function ChatPage() {
           {events.length > 0 && (
             <details className="tool-timeline" open={pending}>
               <summary>
-                <Zap size={13} /> {events.length} execution update
-                {events.length === 1 ? "" : "s"}
+                <Zap size={13} />{" "}
+                {t(
+                  events.length === 1
+                    ? "{count} execution update"
+                    : "{count} execution updates",
+                  { count: events.length },
+                )}
               </summary>
               {events.map((item, i) => (
                 <div key={i}>
                   <span className="tiny-dot" />
                   <strong>
-                    {item.tool || item.name || item.status || item.type}
+                    {item.tool || item.name || t(item.status || item.type)}
                   </strong>
                   {item.content && <span>{item.content}</span>}
                   <pre>
@@ -2541,7 +2678,8 @@ export function ChatPage() {
           {error && !settings.data?.chat_configured && (
             <div className="chat-config-action">
               <Link href="/settings?setup=1#chat-configuration">
-                去设置页配置聊天模型 <ArrowUpRight size={14} />
+                {t("Configure the chat model in Settings")}{" "}
+                <ArrowUpRight size={14} />
               </Link>
             </div>
           )}
@@ -2554,8 +2692,8 @@ export function ChatPage() {
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="A thought, a plan, a question…"
-              aria-label="Message your assistant"
+              placeholder={t("A thought, a plan, a question…")}
+              aria-label={t("Message your assistant")}
               rows={2}
               onKeyDown={(e) => {
                 if (
@@ -2570,7 +2708,8 @@ export function ChatPage() {
             />
             <div>
               <span>
-                <ShieldCheck size={12} /> You approve sensitive actions.
+                <ShieldCheck size={12} />{" "}
+                {t("You approve sensitive actions.")}{" "}
               </span>
               {pending ? (
                 <Button
@@ -2578,7 +2717,7 @@ export function ChatPage() {
                   size="icon"
                   variant="secondary"
                   onClick={() => controller.current?.abort()}
-                  aria-label="Stop generation"
+                  aria-label={t("Stop generation")}
                 >
                   <X size={18} />
                 </Button>
@@ -2587,7 +2726,7 @@ export function ChatPage() {
                   type="submit"
                   size="icon"
                   disabled={!input.trim() || settings.isPending}
-                  aria-label="Send message"
+                  aria-label={t("Send message")}
                 >
                   <ArrowUpRight size={19} />
                 </Button>
@@ -2595,15 +2734,17 @@ export function ChatPage() {
             </div>
           </form>
           <p className="chat-disclaimer">
-            AI can make mistakes. Keep a human eye on important details.
+            {t(
+              "AI can make mistakes. Keep a human eye on important details.",
+            )}{" "}
           </p>
         </section>
         <aside className="chat-aside">
           <div className="panel-heading">
-            <h3>Conversations</h3>
+            <h3>{t("Conversations")}</h3>
             <button
               className="icon-button"
-              aria-label="New conversation"
+              aria-label={t("New conversation")}
               onClick={newChat}
             >
               <Plus size={16} />
@@ -2615,8 +2756,8 @@ export function ChatPage() {
           ) : !sessions.data?.length ? (
             <div className="quiet-empty">
               <MessageSquare size={23} />
-              <strong>A fresh conversation.</strong>
-              <p>Your saved conversations will appear here.</p>
+              <strong>{t("A fresh conversation.")}</strong>
+              <p>{t("Your saved conversations will appear here.")}</p>
             </div>
           ) : (
             sessions.data.map((item) => (
@@ -2632,7 +2773,7 @@ export function ChatPage() {
               >
                 <MessageSquare size={15} />
                 <span>
-                  {item.title || "Conversation"}
+                  {item.title || t("Conversation")}
                   <small>{dateLabel(item.updated_at || item.created_at)}</small>
                 </span>
               </button>
@@ -2640,13 +2781,14 @@ export function ChatPage() {
           )}
           <div className="chat-context-note">
             <Brain size={20} />
-            <h3>Context that belongs to you.</h3>
+            <h3>{t("Context that belongs to you.")}</h3>
             <p>
-              Your assistant recalls confirmed memories to make its answers more
-              relevant.
+              {t(
+                "Your assistant recalls confirmed memories to make its answers more relevant.",
+              )}{" "}
             </p>
             <Link href="/memory" className="text-link">
-              Review your memories <ArrowRight size={13} />
+              {t("Review your memories")} <ArrowRight size={13} />
             </Link>
           </div>
         </aside>
@@ -2664,6 +2806,7 @@ function ResourceEditor({
   item?: RecordItem;
   onClose: () => void;
 }) {
+  const { t, dateLabel } = useI18n();
   const action = useAction();
   const [category, setCategory] = useState(item?.category || "fact");
   const [memoryTopic, setMemoryTopic] = useState(
@@ -2784,7 +2927,9 @@ function ResourceEditor({
       );
       if (result?.approval_required)
         alert(
-          "This action has been sent for your approval. Review it in Activity & approvals.",
+          t(
+            "This action has been sent for your approval. Review it in Activity & approvals.",
+          ),
         );
     });
     if (ok) onClose();
@@ -2804,14 +2949,16 @@ function ResourceEditor({
       >
         <div className="modal-head">
           <div>
-            <span className="eyebrow">A LITTLE MORE INTENTION</span>
+            <span className="eyebrow">{t("A LITTLE MORE INTENTION")}</span>
             <h2 id="editor-title">
-              {item ? "Edit" : "Add"} {titles[kind]}
+              {t(item ? "Edit {resource}" : "Add {resource}", {
+                resource: t(titles[kind]),
+              })}
             </h2>
           </div>
           <button
             className="icon-button"
-            aria-label="Close editor"
+            aria-label={t("Close editor")}
             onClick={onClose}
           >
             <X size={20} />
@@ -2824,19 +2971,19 @@ function ResourceEditor({
         >
           {kind !== "memory" && (
             <label>
-              {kind === "integrations" ? "Server name" : "Title"}
+              {kind === "integrations" ? t("Server name") : t("Title")}
               <input
                 name="title"
                 autoFocus
                 defaultValue={item?.title || ""}
                 placeholder={
                   kind === "tasks"
-                    ? "What would you like to move forward?"
+                    ? t("What would you like to move forward?")
                     : kind === "automations"
-                      ? "e.g. A thoughtful morning briefing"
+                      ? t("e.g. A thoughtful morning briefing")
                       : kind === "integrations"
-                        ? "A name you'll recognize"
-                        : "What’s happening?"
+                        ? t("A name you'll recognize")
+                        : t("What’s happening?")
                 }
                 required
                 maxLength={240}
@@ -2845,12 +2992,12 @@ function ResourceEditor({
           )}
           {["tasks", "calendar"].includes(kind) && (
             <label>
-              Notes <span className="label-meta">optional</span>
+              {t("Notes")} <span className="label-meta">{t("optional")}</span>
               <textarea
                 name="content"
                 rows={3}
                 defaultValue={item?.content || ""}
-                placeholder="A little helpful context…"
+                placeholder={t("A little helpful context…")}
               />
             </label>
           )}
@@ -2858,28 +3005,31 @@ function ResourceEditor({
             <>
               <div className="form-grid">
                 <label>
-                  Priority
+                  {t("Priority")}{" "}
                   <select
                     name="priority"
                     defaultValue={item?.priority || "medium"}
                   >
-                    <option value="low">Low · whenever there’s room</option>
-                    <option value="medium">Medium · keep in view</option>
-                    <option value="high">High · make it a focus</option>
+                    <option value="low">
+                      {t("Low · whenever there’s room")}
+                    </option>
+                    <option value="medium">{t("Medium · keep in view")}</option>
+                    <option value="high">{t("High · make it a focus")}</option>
                   </select>
                 </label>
                 <label>
-                  Status
+                  {t("Status")}{" "}
                   <select name="status" defaultValue={item?.status || "todo"}>
-                    <option value="todo">To do</option>
-                    <option value="in_progress">In progress</option>
-                    <option value="done">Done</option>
-                    <option value="cancelled">Cancelled</option>
+                    <option value="todo">{t("To do")}</option>
+                    <option value="in_progress">{t("In progress")}</option>
+                    <option value="done">{t("Done")}</option>
+                    <option value="cancelled">{t("Cancelled")}</option>
                   </select>
                 </label>
               </div>
               <label>
-                Due date <span className="label-meta">optional</span>
+                {t("Due date")}{" "}
+                <span className="label-meta">{t("optional")}</span>
                 <input
                   name="due_at"
                   type="datetime-local"
@@ -2891,31 +3041,34 @@ function ResourceEditor({
           {kind === "memory" && (
             <>
               <label>
-                What’s worth remembering?
+                {t("What’s worth remembering?")}{" "}
                 <textarea
                   name="content"
                   autoFocus
                   rows={4}
                   defaultValue={item?.content || ""}
-                  placeholder="e.g. I do my best focused work in the morning."
+                  placeholder={t(
+                    "e.g. I do my best focused work in the morning.",
+                  )}
                   required
                   maxLength={10000}
                 />
               </label>
               <label>
-                Category
+                {t("Category")}{" "}
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
                 >
-                  <option value="fact">Important fact</option>
-                  <option value="preference">Preference</option>
-                  <option value="goal">Long-term goal</option>
-                  <option value="task_context">Task context</option>
+                  <option value="fact">{t("Important fact")}</option>
+                  <option value="preference">{t("Preference")}</option>
+                  <option value="goal">{t("Long-term goal")}</option>
+                  <option value="task_context">{t("Task context")}</option>
                 </select>
               </label>
               <label>
-                Memory topic <span className="label-meta">optional</span>
+                {t("Memory topic")}{" "}
+                <span className="label-meta">{t("optional")}</span>
                 <input
                   name="memory_topic"
                   value={memoryTopic}
@@ -2923,17 +3076,18 @@ function ResourceEditor({
                     setMemoryTopic(event.target.value);
                     setReplacements([]);
                   }}
-                  placeholder="e.g. work-hours"
+                  placeholder={t("e.g. work-hours")}
                   maxLength={120}
                 />
               </label>
               <div className="field-note">
-                Use the same topic when correcting an existing fact. Nothing is
-                replaced automatically.
+                {t(
+                  "Use the same topic when correcting an existing fact. Nothing is replaced automatically.",
+                )}{" "}
               </div>
               {!!memoryTopic.trim() && (
                 <fieldset className="memory-conflicts">
-                  <legend>Replace conflicting facts</legend>
+                  <legend>{t("Replace conflicting facts")}</legend>
                   <Failure
                     error={memoryCandidates.error}
                     retry={() => {
@@ -2946,8 +3100,9 @@ function ResourceEditor({
                   ) : conflictingMemories.length ? (
                     <>
                       <p>
-                        Select every confirmed fact that this new version should
-                        replace. Unselected conflicts will prevent confirmation.
+                        {t(
+                          "Select every confirmed fact that this new version should replace. Unselected conflicts will prevent confirmation.",
+                        )}{" "}
                       </p>
                       {conflictingMemories.map((candidate) => (
                         <label className="checkbox-label" key={candidate.id}>
@@ -2965,32 +3120,36 @@ function ResourceEditor({
                           <span>
                             <strong>{candidate.content}</strong>
                             <small>
-                              Source: {candidate.source || "Added by you"} ·{" "}
-                              {dateLabel(candidate.created_at)}
+                              {t("Source:")}{" "}
+                              {candidate.source === "Added manually by user"
+                                ? t("Added manually by user")
+                                : candidate.source || t("Added by you")}{" "}
+                              · {dateLabel(candidate.created_at)}
                             </small>
                           </span>
                         </label>
                       ))}
                     </>
                   ) : (
-                    <p>No confirmed facts use this topic.</p>
+                    <p>{t("No confirmed facts use this topic.")}</p>
                   )}
-                  <small>Showing confirmed facts for this topic.</small>
+                  <small>{t("Showing confirmed facts for this topic.")}</small>
                 </fieldset>
               )}
               <div className="consent-box memory-review-note">
                 <ShieldCheck size={18} />
                 <span>
-                  <strong>Save first. Confirm when you’re ready.</strong>
+                  <strong>{t("Save first. Confirm when you’re ready.")}</strong>
                   <small>
-                    New and edited memories are saved for review. Confirm the
-                    memory card afterward to use it as long-term context.
+                    {t(
+                      "New and edited memories are saved for review. Confirm the memory card afterward to use it as long-term context.",
+                    )}{" "}
                   </small>
                 </span>
               </div>
               {item?.source && (
                 <div className="field-note">
-                  <FileText size={13} /> Source: {item.source}
+                  <FileText size={13} /> {t("Source:")} {item.source}
                 </div>
               )}
             </>
@@ -2999,7 +3158,7 @@ function ResourceEditor({
             <>
               <div className="form-grid">
                 <label>
-                  Starts
+                  {t("Starts")}{" "}
                   <input
                     name="start_at"
                     type="datetime-local"
@@ -3008,7 +3167,7 @@ function ResourceEditor({
                   />
                 </label>
                 <label>
-                  Ends
+                  {t("Ends")}{" "}
                   <input
                     name="end_at"
                     type="datetime-local"
@@ -3018,57 +3177,65 @@ function ResourceEditor({
                 </label>
               </div>
               <label>
-                Calendar
+                {t("Calendar")}{" "}
                 <select
                   name="provider"
                   defaultValue={item?.provider || "local"}
                 >
-                  <option value="local">PersonalOS · local workspace</option>
+                  <option value="local">
+                    {t("PersonalOS · local workspace")}
+                  </option>
                   <option value="google">
-                    Google Calendar · approval required
+                    {t("Google Calendar · approval required")}{" "}
                   </option>
                 </select>
               </label>
               <div className="field-note">
-                <CalendarDays size={14} /> Scheduling conflicts are checked
-                before the event is saved.
+                <CalendarDays size={14} />{" "}
+                {t(
+                  "Scheduling conflicts are checked before the event is saved.",
+                )}{" "}
               </div>
             </>
           )}
           {kind === "automations" && (
             <>
               <label>
-                Routine type
+                {t("Routine type")}{" "}
                 <select
                   name="automation_kind"
                   value={automationKind}
                   onChange={(event) => setAutomationKind(event.target.value)}
                 >
-                  <option value="agent">AI assistant task</option>
-                  <option value="briefing">Daily briefing</option>
+                  <option value="agent">{t("AI assistant task")}</option>
+                  <option value="briefing">{t("Daily briefing")}</option>
                 </select>
               </label>
               {automationKind === "briefing" && (
                 <div className="field-note">
-                  <FileText size={13} /> Generates and saves a briefing from
-                  your real tasks, calendar and confirmed memories.
+                  <FileText size={13} />{" "}
+                  {t(
+                    "Generates and saves a briefing from your real tasks, calendar and confirmed memories.",
+                  )}{" "}
                 </div>
               )}
               <label>
                 {automationKind === "briefing"
-                  ? "Routine note"
-                  : "What should your assistant do?"}
+                  ? t("Routine note")
+                  : t("What should your assistant do?")}
                 <textarea
                   name="prompt"
                   rows={3}
                   required
                   defaultValue={item?.prompt || ""}
-                  placeholder="e.g. Give me a concise briefing of today's tasks, events and priorities."
+                  placeholder={t(
+                    "e.g. Give me a concise briefing of today's tasks, events and priorities.",
+                  )}
                 />
               </label>
               <div className="form-grid">
                 <label>
-                  Schedule (cron)
+                  {t("Schedule (cron)")}{" "}
                   <input
                     name="cron"
                     defaultValue={item?.cron || "0 8 * * *"}
@@ -3076,7 +3243,7 @@ function ResourceEditor({
                   />
                 </label>
                 <label>
-                  Time zone
+                  {t("Time zone")}{" "}
                   <input
                     name="timezone"
                     required
@@ -3088,12 +3255,14 @@ function ResourceEditor({
                 </label>
               </div>
               <div className="field-note">
-                <Clock3 size={13} /> “0 8 * * *” runs daily at 08:00. Leave
-                blank for a one-time run.
+                <Clock3 size={13} />{" "}
+                {t(
+                  "“0 8 * * *” runs daily at 08:00. Leave blank for a one-time run.",
+                )}{" "}
               </div>
               <div className="form-grid">
                 <label>
-                  One-time / next execution
+                  {t("One-time / next execution")}{" "}
                   <input
                     name="next_run_at"
                     type="datetime-local"
@@ -3101,11 +3270,11 @@ function ResourceEditor({
                   />
                 </label>
                 <label>
-                  Status
+                  {t("Status")}{" "}
                   <select name="status" defaultValue={item?.status || "active"}>
-                    <option value="active">Active</option>
-                    <option value="paused">Paused</option>
-                    <option value="cancelled">Cancelled</option>
+                    <option value="active">{t("Active")}</option>
+                    <option value="paused">{t("Paused")}</option>
+                    <option value="cancelled">{t("Cancelled")}</option>
                   </select>
                 </label>
               </div>
@@ -3114,7 +3283,7 @@ function ResourceEditor({
           {kind === "integrations" && (
             <>
               <label>
-                HTTPS server URL
+                {t("HTTPS server URL")}{" "}
                 <input
                   name="url"
                   type="url"
@@ -3126,8 +3295,9 @@ function ResourceEditor({
               <div className="info-strip">
                 <ShieldCheck size={20} />
                 <p>
-                  New servers start untrusted with no permissions. You’ll review
-                  tools and explicitly authorize access after adding the server.
+                  {t(
+                    "New servers start untrusted with no permissions. You’ll review tools and explicitly authorize access after adding the server.",
+                  )}{" "}
                 </p>
               </div>
             </>
@@ -3135,7 +3305,7 @@ function ResourceEditor({
           <ErrorText text={action.error} />
           <div className="modal-actions">
             <Button type="button" variant="ghost" onClick={onClose}>
-              Cancel
+              {t("Cancel")}{" "}
             </Button>
             <Button type="submit" disabled={action.pending}>
               {action.pending ? (
@@ -3143,7 +3313,9 @@ function ResourceEditor({
               ) : (
                 <Check size={15} />
               )}
-              {item ? "Save changes" : `Add ${titles[kind]}`}
+              {item
+                ? t("Save changes")
+                : t("Add {resource}", { resource: t(titles[kind]) })}
             </Button>
           </div>
         </form>

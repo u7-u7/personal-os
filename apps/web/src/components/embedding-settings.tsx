@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { api, type EmbeddingConnectionCheck, type Settings } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/components/i18n-provider";
 
 export function EmbeddingSettings({
   settings,
@@ -26,6 +27,7 @@ export function EmbeddingSettings({
   onRemoveKey: () => Promise<boolean>;
   onTestPendingChange: (pending: boolean) => void;
 }) {
+  const { t, errorText } = useI18n();
   const keyInput = useRef<HTMLInputElement>(null);
   const check = useMutation({
     mutationFn: async (version: number) => ({
@@ -55,7 +57,9 @@ export function EmbeddingSettings({
   async function removeKey() {
     if (
       !confirm(
-        "Remove the embedding API key? Future embedding calls will become unavailable.",
+        t(
+          "Remove the embedding API key? Future embedding calls will become unavailable.",
+        ),
       )
     )
       return;
@@ -76,11 +80,11 @@ export function EmbeddingSettings({
           <Database size={21} />
         </span>
         <div>
-          <h2 id="embedding-heading">2. 向量模型 · Your embedding model</h2>
+          <h2 id="embedding-heading">{t("2. Your embedding model")}</h2>
           <p>
-            Qwen3.7 Embedding Flash
-            将文字转换为记忆检索向量，使用中国内地（北京）百炼工作空间的独立地址与
-            API Key。尚未配置不会阻止聊天。
+            {t(
+              "Qwen3.7 Embedding Flash turns text into memory retrieval vectors. Use a separate endpoint and API key from your Beijing Model Studio workspace. Chat remains available without embeddings.",
+            )}
           </p>
         </div>
       </div>
@@ -94,22 +98,23 @@ export function EmbeddingSettings({
       >
         <div className="form-grid">
           <label>
-            Embedding model ID <span className="label-meta">向量模型</span>
+            {t("Embedding model ID")}{" "}
+            <span className="label-meta">{t("Embedding model")}</span>
             <input
-              aria-label="Embedding model ID"
+              aria-label={t("Embedding model ID")}
               name="embedding_model"
               value="qwen3.7-text-embedding-flash"
               readOnly
             />
           </label>
           <label>
-            Vector dimensions <span className="label-meta">向量维度</span>
+            {t("Vector dimensions")}
             <select
-              aria-label="Vector dimensions"
+              aria-label={t("Vector dimensions")}
               name="embedding_dimensions"
               defaultValue={String(settings.embedding_dimensions || 1024)}
             >
-              <option value="1024">1024 · default</option>
+              <option value="1024">{t("1024 · default")}</option>
               <option value="768">768</option>
               <option value="512">512</option>
               <option value="256">256</option>
@@ -117,10 +122,10 @@ export function EmbeddingSettings({
           </label>
         </div>
         <label>
-          Beijing workspace base URL{" "}
-          <span className="label-meta">北京工作空间地址 · 首次配置必填</span>
+          {t("Beijing workspace base URL")}{" "}
+          <span className="label-meta">{t("Required for first setup")}</span>
           <input
-            aria-label="Beijing workspace base URL"
+            aria-label={t("Beijing workspace base URL")}
             name="embedding_base_url"
             type="url"
             defaultValue={settings.embedding_base_url || ""}
@@ -129,15 +134,16 @@ export function EmbeddingSettings({
           />
         </label>
         <div className="field-note">
-          从你的百炼北京工作空间复制 OpenAI 兼容 Base URL，需包含真实工作空间
-          ID；不会自动使用聊天模型的地址。
+          {t(
+            "Copy the OpenAI-compatible Base URL from your Beijing Model Studio workspace, including its real workspace ID. The chat model endpoint is not reused.",
+          )}
         </div>
         <label>
-          Embedding API key{" "}
+          {t("Embedding API key")}{" "}
           <span className="label-meta">
             {settings.embedding_api_key_configured
-              ? "独立密钥已配置，留空保留"
-              : "首次配置必填"}
+              ? t("Separate key configured; leave blank to keep it")
+              : t("Required for first setup")}
           </span>
           <input
             ref={keyInput}
@@ -147,15 +153,16 @@ export function EmbeddingSettings({
             aria-required={!settings.embedding_api_key_configured}
             placeholder={
               settings.embedding_api_key_configured
-                ? "留空保留当前向量模型密钥"
-                : "填写百炼北京工作空间 API Key"
+                ? t("Leave blank to keep the current embedding key")
+                : t("Enter your Beijing Model Studio workspace API key")
             }
           />
         </label>
         <div className="field-note">
           <LockKeyhole size={13} />{" "}
-          密钥仅在服务端加密保存，不会返回浏览器。DeepSeek
-          密钥不会用于向量模型。
+          {t(
+            "Keys are encrypted on the server and never returned to the browser. A DeepSeek key is never used for embeddings.",
+          )}
         </div>
       </fieldset>
       <div className="provider-presets">
@@ -163,7 +170,7 @@ export function EmbeddingSettings({
           type="button"
           size="sm"
           variant="secondary"
-          aria-label="Test saved embedding connection"
+          aria-label={t("Test saved embedding connection")}
           disabled={disabled}
           onClick={() => void testConnection()}
         >
@@ -172,7 +179,7 @@ export function EmbeddingSettings({
           ) : (
             <FlaskConical size={14} />
           )}
-          测试已保存连接 · Embedding
+          {t("Test saved embedding connection")}
         </Button>
         {settings.embedding_api_key_configured && (
           <Button
@@ -182,36 +189,43 @@ export function EmbeddingSettings({
             disabled={disabled}
             onClick={() => void removeKey()}
           >
-            Remove embedding key
+            {t("Remove embedding key")}
           </Button>
         )}
       </div>
       <div className="field-note">
-        先保存再测试。检测仅发送固定文本，不会上传你的记忆；可能产生少量供应商费用。
+        {t(
+          "Save before testing. The check sends only fixed text, never your memories, and may incur a small provider charge.",
+        )}
       </div>
       {currentCheck && check.error && (
         <div className="error-banner" role="alert">
           {check.error instanceof Error
-            ? check.error.message
-            : "Embedding connection check failed"}
+            ? errorText(check.error.message)
+            : t("Embedding connection check failed")}
         </div>
       )}
       {serverSettingsChanged && (
         <div className="error-banner" role="alert">
-          Saved embedding settings changed on the server. Refresh this page and
-          test again.
+          {t(
+            "Saved embedding settings changed on the server. Refresh this page and test again.",
+          )}
         </div>
       )}
       {currentCheck && check.data && !serverSettingsChanged && (
         <div className="success-banner" role="status">
-          <CheckCircle2 size={16} /> The saved endpoint returned a valid{" "}
-          {check.data.dimensions}-dimension embedding from {check.data.model}.
+          <CheckCircle2 size={16} />{" "}
+          {t(
+            "The saved endpoint returned a valid {dimensions}-dimension embedding from {model}.",
+            { dimensions: check.data.dimensions, model: check.data.model },
+          )}
         </div>
       )}
       <div className="field-note">
-        <ShieldCheck size={13} /> Saving or testing this configuration does not
-        enable Hy Memory indexing. Its data storage and authorization still need
-        separate setup.
+        <ShieldCheck size={13} />{" "}
+        {t(
+          "Saving or testing this configuration does not enable Hy Memory indexing. Its data storage and authorization still need separate setup.",
+        )}
       </div>
     </section>
   );

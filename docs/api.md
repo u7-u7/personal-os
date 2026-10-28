@@ -2,6 +2,8 @@
 
 The authoritative machine-readable schema is `GET /api/openapi.json`; browse `/api/docs` on the running API. All resource endpoints require the HttpOnly session set by registration/login. Owner IDs are derived from the session and cannot be supplied by the browser.
 
+Registration/login passwords use the same 8–256 character constraint. Existing passwords and session records are preserved. Validation diagnostics omit input values and context so passwords and API keys cannot be echoed by a failed request. UI language is a browser preference (`system`, `zh-CN`, `en`), independent from user data and API protocol values; it does not change Agent output or stored content.
+
 | Endpoint | Behavior |
 |---|---|
 | `POST /api/auth/register`, `/login`, `/logout`; `GET /api/auth/me` | Account/session lifecycle; Redis-backed authentication rate limit |

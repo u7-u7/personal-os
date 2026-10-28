@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { api, type ChatConnectionCheck, type Settings } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/components/i18n-provider";
 
 export function ChatSettings({
   settings,
@@ -27,6 +28,7 @@ export function ChatSettings({
   onRemoveKey: () => Promise<boolean>;
   onTestPendingChange: (pending: boolean) => void;
 }) {
+  const { t, errorText } = useI18n();
   const fields = useRef<HTMLFieldSetElement>(null);
   const check = useMutation({
     mutationFn: async (version: number) => ({
@@ -66,10 +68,11 @@ export function ChatSettings({
           <Bot size={21} />
         </span>
         <div>
-          <h2 id="chat-configuration-heading">1. 聊天模型 · Your AI model</h2>
+          <h2 id="chat-configuration-heading">{t("1. Your AI model")}</h2>
           <p>
-            填写 OpenAI 兼容服务的模型、地址和密钥，用于对话、任务理解和每日 AI
-            简报。
+            {t(
+              "Enter an OpenAI-compatible model, endpoint and key for conversations, task understanding and daily AI briefings.",
+            )}
           </p>
         </div>
       </div>
@@ -80,7 +83,7 @@ export function ChatSettings({
         onChange={changed}
       >
         <div className="provider-presets">
-          <span>Quick setup</span>
+          <span>{t("Quick setup")}</span>
           <Button
             type="button"
             size="sm"
@@ -103,24 +106,31 @@ export function ChatSettings({
           >
             DeepSeek <ArrowUpRight size={13} />
           </Button>
-          <span className="field-note">仅填写预设，补充 Key 后保存。</span>
+          <span className="field-note">
+            {t("The preset fills fields only. Add your key, then save.")}
+          </span>
         </div>
         <div className="form-grid">
           <label>
-            Model ID <span className="label-meta">聊天模型名称 · 必填</span>
+            {t("Model ID")}{" "}
+            <span className="label-meta">
+              {t("Chat model name · required")}
+            </span>
             <input
-              aria-label="Model ID"
+              aria-label={t("Model ID")}
               name="model"
               defaultValue={settings.model || ""}
-              placeholder="供应商提供的模型 ID"
+              placeholder={t("The model ID from your provider")}
               required
             />
           </label>
           <label>
-            Provider base URL{" "}
-            <span className="label-meta">聊天 API 地址 · 必填</span>
+            {t("Provider base URL")}{" "}
+            <span className="label-meta">
+              {t("Chat API endpoint · required")}
+            </span>
             <input
-              aria-label="Provider base URL"
+              aria-label={t("Provider base URL")}
               name="base_url"
               type="url"
               defaultValue={settings.base_url || ""}
@@ -131,11 +141,11 @@ export function ChatSettings({
           </label>
         </div>
         <label>
-          API key{" "}
+          {t("API key")}{" "}
           <span className="label-meta">
             {settings.api_key_configured
-              ? "密钥已配置，留空保留"
-              : "首次配置必填"}
+              ? t("Key configured; leave blank to keep it")
+              : t("Required for first setup")}
           </span>
           <input
             name="api_key"
@@ -144,52 +154,62 @@ export function ChatSettings({
             aria-required={!settings.api_key_configured}
             placeholder={
               settings.api_key_configured
-                ? "留空保留当前密钥"
-                : "填写聊天模型供应商的 API Key"
+                ? t("Leave blank to keep the current key")
+                : t("Enter your chat provider API key")
             }
           />
         </label>
         <div className="field-note">
-          <LockKeyhole size={13} /> 密钥仅在服务端加密保存，不会返回浏览器。
+          <LockKeyhole size={13} />{" "}
+          {t(
+            "Keys are encrypted on the server and never returned to the browser.",
+          )}
           {settings.chat_config_source === "server_default"
-            ? "当前使用服务端默认模型配置。"
+            ? t("Currently using the server default configuration.")
             : settings.chat_config_source === "personal"
-              ? "当前使用你的个人配置。"
-              : "尚未配置可用的聊天连接。"}
+              ? t("Currently using your personal configuration.")
+              : t("No complete chat connection has been configured.")}
         </div>
         <div className="form-grid">
           <label>
-            Fast routing model <span className="label-meta">optional</span>
+            {t("Fast routing model")}{" "}
+            <span className="label-meta">{t("optional")}</span>
             <input
-              aria-label="Fast routing model"
+              aria-label={t("Fast routing model")}
               name="fast_model"
               defaultValue={settings.fast_model || ""}
-              placeholder="留空使用主模型"
+              placeholder={t("Leave blank to use the main model")}
             />
           </label>
           <label>
-            Reasoning routing model <span className="label-meta">optional</span>
+            {t("Reasoning routing model")}{" "}
+            <span className="label-meta">{t("optional")}</span>
             <input
-              aria-label="Reasoning routing model"
+              aria-label={t("Reasoning routing model")}
               name="reasoning_model"
               defaultValue={settings.reasoning_model || ""}
-              placeholder="留空使用主模型"
+              placeholder={t("Leave blank to use the main model")}
             />
           </label>
         </div>
         <label>
-          How to route requests
+          {t("How to route requests")}
           <select
             name="decision_provider"
             defaultValue={settings.decision_provider || "rules"}
           >
-            <option value="rules">Fast rules · default</option>
-            <option value="llm">Your language model</option>
-            <option value="jev">Jev · requires server authorization</option>
+            <option value="rules">{t("Fast rules · default")}</option>
+            <option value="llm">{t("Your language model")}</option>
+            <option value="jev">
+              {t("Jev · requires server authorization")}
+            </option>
           </select>
         </label>
         <div className="field-note">
-          <ShieldCheck size={13} /> 路由只选择模型；敏感操作仍需要你的审批。
+          <ShieldCheck size={13} />{" "}
+          {t(
+            "Routing only selects models; sensitive actions still need your approval.",
+          )}
         </div>
       </fieldset>
       <div className="provider-presets">
@@ -205,7 +225,7 @@ export function ChatSettings({
           ) : (
             <FlaskConical size={14} />
           )}
-          测试已保存连接 · Chat
+          {t("Test saved chat connection")}
         </Button>
         {settings.api_key_configured && (
           <Button
@@ -214,7 +234,13 @@ export function ChatSettings({
             variant="ghost"
             disabled={disabled}
             onClick={() => {
-              if (!confirm("移除聊天模型 API Key？聊天和 AI 简报将不可用。"))
+              if (
+                !confirm(
+                  t(
+                    "Remove the chat API key? Chat and AI briefings will become unavailable.",
+                  ),
+                )
+              )
                 return;
               check.reset();
               void onRemoveKey().then((ok) => {
@@ -224,27 +250,34 @@ export function ChatSettings({
               });
             }}
           >
-            移除聊天密钥
+            {t("Remove chat key")}
           </Button>
         )}
       </div>
       <div className="field-note">
-        先保存再测试。检测会向已保存的模型发送固定短消息，可能产生少量供应商费用，不会发送你的对话或记忆。
+        {t(
+          "Save before testing. The check sends a fixed short message to the saved model and may incur a small provider charge. It never sends your conversations or memories.",
+        )}
       </div>
       {currentCheck && check.error && (
         <div className="error-banner" role="alert">
-          {check.error.message}
+          {errorText(check.error.message)}
         </div>
       )}
       {serverSettingsChanged && (
         <div className="error-banner" role="alert">
-          服务端配置已变更，请重新读取设置后再测试。
+          {t(
+            "Saved chat settings changed on the server. Refresh this page and test again.",
+          )}
         </div>
       )}
       {currentCheck && check.data && !serverSettingsChanged && (
         <div className="success-banner" role="status">
-          <CheckCircle2 size={16} /> 已保存的 {check.data.model}{" "}
-          返回真实回复，聊天连接验证通过。
+          <CheckCircle2 size={16} />{" "}
+          {t(
+            "The saved {model} returned real text. The chat connection check passed.",
+            { model: check.data.model },
+          )}
         </div>
       )}
     </section>

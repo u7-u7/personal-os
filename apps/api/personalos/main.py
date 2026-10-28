@@ -8,6 +8,7 @@ from typing import Annotated
 import httpx
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
@@ -55,7 +56,16 @@ async def origin_guard(request: Request, call_next):
 @app.exception_handler(ValidationError)
 async def validation_error(request: Request, exc: ValidationError):
     from fastapi.responses import JSONResponse
-    return JSONResponse(status_code=422, content={"detail": json.loads(exc.json(include_url=False))})
+    return JSONResponse(status_code=422, content={"detail": json.loads(exc.json(include_url=False, include_input=False, include_context=False))})
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error(request: Request, exc: RequestValidationError):
+    from fastapi.responses import JSONResponse
+
+    # Registration/settings errors must never echo password or API-key input.
+    errors = [{key: issue[key] for key in ("type", "loc", "msg") if key in issue} for issue in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 @app.get("/api/health")

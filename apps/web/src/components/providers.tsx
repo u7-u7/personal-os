@@ -1,7 +1,17 @@
 "use client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
-export function Providers({ children }: { children: React.ReactNode }) {
+import { I18nProvider } from "@/components/i18n-provider";
+import type { LanguagePreference, Locale } from "@/lib/locale";
+export function Providers({
+  children,
+  initialLanguage,
+  initialLocale,
+}: {
+  children: React.ReactNode;
+  initialLanguage: LanguagePreference;
+  initialLocale: Locale;
+}) {
   const [client] = useState(
     () =>
       new QueryClient({
@@ -14,5 +24,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
         },
       }),
   );
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return (
+    <I18nProvider
+      initialLanguage={initialLanguage}
+      initialLocale={initialLocale}
+    >
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    </I18nProvider>
+  );
 }
