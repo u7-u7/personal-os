@@ -72,7 +72,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       message =
         typeof body.detail === "string"
           ? body.detail
-          : JSON.stringify(body.detail || body.error || body);
+          : typeof body.detail?.message === "string"
+            ? body.detail.message
+            : JSON.stringify(body.detail || body.error || body);
     } catch {
       /* Non-JSON upstream failures still preserve the status. */
     }

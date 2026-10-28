@@ -158,7 +158,9 @@ function Loading() {
 function Badge({ status }: { status?: string }) {
   return (
     <span className={`badge badge-${status || "default"}`}>
-      {status?.replaceAll("_", " ") || "unknown"}
+      {status === "superseded"
+        ? "replaced"
+        : status?.replaceAll("_", " ") || "unknown"}
     </span>
   );
 }
@@ -888,6 +890,12 @@ export function MemoryPage() {
                 <Badge status={item.status} />
               </div>
               <p>{item.content}</p>
+              {typeof item.extra?.fact_key === "string" && (
+                <div className="memory-topic">
+                  <span>Topic</span>
+                  {item.extra.fact_key}
+                </div>
+              )}
               <div className="memory-source">
                 <FileText size={12} />
                 {item.source?.startsWith("chat:") ? (
@@ -2731,6 +2739,28 @@ function ResourceEditor({
 }) {
   const action = useAction();
   const [category, setCategory] = useState(item?.category || "fact");
+  const [memoryTopic, setMemoryTopic] = useState(
+    typeof item?.extra?.fact_key === "string" ? item.extra.fact_key : "",
+  );
+  const [replacements, setReplacements] = useState<string[]>(
+    Array.isArray(item?.extra?.supersedes)
+      ? item.extra.supersedes.filter(
+          (id): id is string => typeof id === "string",
+        )
+      : [],
+  );
+  const memoryCandidates = useQuery({
+    queryKey: ["memory-conflict-candidates"],
+    enabled: kind === "memory",
+    queryFn: ({ signal }) =>
+      api<RecordItem[]>("/memories?limit=200", { signal }),
+  });
+  const conflictingMemories = (memoryCandidates.data || []).filter(
+    (candidate) =>
+      candidate.id !== item?.id &&
+      candidate.status === "confirmed" &&
+      candidate.extra?.fact_key === memoryTopic.trim(),
+  );
   const [automationKind, setAutomationKind] = useState(
     item?.extra?.kind === "briefing" ? "briefing" : "agent",
   );
@@ -2767,8 +2797,22 @@ function ResourceEditor({
       Object.assign(body, {
         content: string("content"),
         category,
-        status: string("confirmed") === "on" ? "confirmed" : "pending",
+        // Changes need a separate explicit confirmation after the revised fact is saved.
+        status: "pending",
         source: item?.source || "Added manually by user",
+        extra: {
+          ...(Array.isArray(item?.extra?.tags)
+            ? { tags: item.extra.tags }
+            : {}),
+          ...(memoryTopic.trim()
+            ? {
+                fact_key: memoryTopic.trim(),
+                supersedes: replacements.filter((id) =>
+                  conflictingMemories.some((candidate) => candidate.id === id),
+                ),
+              }
+            : {}),
+        },
       });
     if (kind === "calendar")
       Object.assign(body, {
@@ -2938,20 +2982,82 @@ function ResourceEditor({
                   <option value="task_context">Task context</option>
                 </select>
               </label>
-              <label className="checkbox-label consent-box">
+              <label>
+                Memory topic <span className="label-meta">optional</span>
                 <input
-                  name="confirmed"
-                  type="checkbox"
-                  defaultChecked={item?.status === "confirmed"}
+                  name="memory_topic"
+                  value={memoryTopic}
+                  onChange={(event) => {
+                    setMemoryTopic(event.target.value);
+                    setReplacements([]);
+                  }}
+                  placeholder="e.g. work-hours"
+                  maxLength={120}
                 />
-                <span>
-                  <strong>I want my assistant to remember this.</strong>
+              </label>
+              <div className="field-note">
+                Use the same topic when correcting an existing fact. Nothing is
+                replaced automatically.
+              </div>
+              {!!memoryTopic.trim() && (
+                <fieldset className="memory-conflicts">
+                  <legend>Replace conflicting facts</legend>
+                  <Failure
+                    error={memoryCandidates.error}
+                    retry={() => {
+                      void memoryCandidates.refetch();
+                    }}
+                  />
+                  {memoryCandidates.isPending ? (
+                    <Loading />
+                  ) : conflictingMemories.length ? (
+                    <>
+                      <p>
+                        Select every confirmed fact that this new version should
+                        replace. Unselected conflicts will prevent confirmation.
+                      </p>
+                      {conflictingMemories.map((candidate) => (
+                        <label className="checkbox-label" key={candidate.id}>
+                          <input
+                            type="checkbox"
+                            checked={replacements.includes(candidate.id)}
+                            onChange={(event) =>
+                              setReplacements((current) =>
+                                event.target.checked
+                                  ? [...current, candidate.id]
+                                  : current.filter((id) => id !== candidate.id),
+                              )
+                            }
+                          />
+                          <span>
+                            <strong>{candidate.content}</strong>
+                            <small>
+                              Source: {candidate.source || "Added by you"} ·{" "}
+                              {dateLabel(candidate.created_at)}
+                            </small>
+                          </span>
+                        </label>
+                      ))}
+                    </>
+                  ) : (
+                    <p>No recent confirmed facts use this topic.</p>
+                  )}
                   <small>
-                    Unchecked memories are saved for review and are not used as
-                    long-term context.
+                    The latest 200 memories are shown here. All existing facts
+                    are checked again when you confirm.
+                  </small>
+                </fieldset>
+              )}
+              <div className="consent-box memory-review-note">
+                <ShieldCheck size={18} />
+                <span>
+                  <strong>Save first. Confirm when you’re ready.</strong>
+                  <small>
+                    New and edited memories are saved for review. Confirm the
+                    memory card afterward to use it as long-term context.
                   </small>
                 </span>
-              </label>
+              </div>
               {item?.source && (
                 <div className="field-note">
                   <FileText size={13} /> Source: {item.source}

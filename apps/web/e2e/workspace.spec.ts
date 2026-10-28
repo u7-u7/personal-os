@@ -79,6 +79,7 @@ test("real workspace: account, task, memory consent, approval and model boundary
   await page
     .getByLabel("What’s worth remembering?")
     .fill("I prefer a calm morning with one clear priority.");
+  await page.getByLabel("Memory topic").fill("focus-hours");
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Add memory", exact: true })
@@ -104,6 +105,76 @@ test("real workspace: account, task, memory consent, approval and model boundary
   await page.screenshot({
     animations: "disabled",
     path: path.resolve("../../docs/evidence/memory.png"),
+    fullPage: true,
+  });
+
+  // A conflicting topic stays pending until the user explicitly chooses the earlier fact to replace.
+  await page.getByRole("button", { name: "Add memory", exact: true }).click();
+  await page
+    .getByLabel("What’s worth remembering?")
+    .fill("I now prefer focused work in the afternoon.");
+  await page.getByLabel("Memory topic").fill("focus-hours");
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Add memory", exact: true })
+    .click();
+  const replacementCard = page
+    .locator(".memory-card")
+    .filter({ hasText: "I now prefer focused work in the afternoon." });
+  const conflictResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "PATCH" &&
+      new URL(response.url()).pathname.startsWith("/api/memories/") &&
+      response.status() === 409,
+  );
+  await replacementCard.getByRole("button", { name: "Confirm memory" }).click();
+  expect((await conflictResponse).status()).toBe(409);
+  await expect(page.locator('main [role="alert"]')).toContainText(
+    "Confirm which existing fact this replaces",
+  );
+  await replacementCard
+    .getByRole("button", { name: "Edit", exact: true })
+    .click();
+  await page
+    .getByRole("group", { name: "Replace conflicting facts" })
+    .getByRole("checkbox", { name: /I prefer a calm morning/ })
+    .check();
+  await page.waitForLoadState("networkidle");
+  await page.screenshot({
+    animations: "disabled",
+    path: path.resolve("../../docs/evidence/memory-conflict-review.png"),
+    fullPage: true,
+  });
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Save changes" })
+    .click();
+  await replacementCard.getByRole("button", { name: "Confirm memory" }).click();
+  await expect(replacementCard.locator(".badge")).toHaveText("confirmed");
+  const memoryFacts = (await (
+    await page.request.get("/api/memories?limit=200")
+  ).json()) as {
+    content: string;
+    status: string;
+    source: string;
+    extra: { supersedes?: string[] };
+  }[];
+  expect(
+    memoryFacts.find(
+      (fact) =>
+        fact.content === "I prefer a calm morning with one clear priority.",
+    )?.status,
+  ).toBe("superseded");
+  const correctedFact = memoryFacts.find(
+    (fact) => fact.content === "I now prefer focused work in the afternoon.",
+  );
+  expect(correctedFact?.status).toBe("confirmed");
+  expect(correctedFact?.source).toBe("Added manually by user");
+  expect(correctedFact?.extra.supersedes).toHaveLength(1);
+  await page.waitForLoadState("networkidle");
+  await page.screenshot({
+    animations: "disabled",
+    path: path.resolve("../../docs/evidence/memory-conflict-resolved.png"),
     fullPage: true,
   });
 
