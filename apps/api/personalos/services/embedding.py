@@ -3,6 +3,7 @@
 Configuring a provider does not activate or rebuild the optional Hy indexes.
 The same configuration supplies the SDK client and the Hy embedder boundary.
 """
+import asyncio
 from dataclasses import dataclass, field
 import hashlib
 import json
@@ -122,12 +123,13 @@ class EmbeddingService:
             raise HTTPException(503, "Add the Beijing workspace Base URL and a separate Bailian embedding API key in Settings")
         await validate_embedding_url(self.config.base_url)
         try:
-            async with httpx.AsyncClient(timeout=20, follow_redirects=False, transport=self.transport) as http:
-                async with AsyncOpenAI(api_key=self.config.api_key, base_url=self.config.base_url,
-                                       max_retries=0, timeout=20, http_client=http) as client:
-                    response = await client.embeddings.create(model=self.config.model, input=texts,
-                                                             dimensions=self.config.dimensions, encoding_format="float")
-        except (APITimeoutError, APIConnectionError) as exc:
+            async with asyncio.timeout(20):
+                async with httpx.AsyncClient(timeout=20, follow_redirects=False, transport=self.transport) as http:
+                    async with AsyncOpenAI(api_key=self.config.api_key, base_url=self.config.base_url,
+                                           max_retries=0, timeout=20, http_client=http) as client:
+                        response = await client.embeddings.create(model=self.config.model, input=texts,
+                                                                 dimensions=self.config.dimensions, encoding_format="float")
+        except (TimeoutError, APITimeoutError, APIConnectionError) as exc:
             raise HTTPException(502, "Embedding provider timed out or could not be reached; no vectors were saved") from exc
         except APIStatusError as exc:
             status = 429 if exc.status_code == 429 else 502

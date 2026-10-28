@@ -1,4 +1,7 @@
 export const workspaceMessages: Record<string, string> = {
+  "Model or tool execution failed. Check Activity and model settings":
+    "模型或工具执行失败，请查看执行记录和模型设置",
+  "Service URL is invalid": "服务地址格式不正确，请检查域名和端口",
   "PersonalOS — A little more headspace": "PersonalOS — 让生活从容一点",
   "Your private AI workspace for a more intentional day. Tasks, memory, calendar and thoughtful automation.":
     "你的私人 AI 工作台，统一管理任务、记忆、日历与自动化，让每一天更从容。",

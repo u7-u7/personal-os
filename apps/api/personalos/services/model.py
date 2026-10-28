@@ -1,4 +1,6 @@
-"""Per-user chat configuration and a bounded, transcript-free connection probe."""
+"""Per-user chat configuration and bounded, server-owned provider clients."""
+import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
@@ -9,6 +11,7 @@ from openai import APIConnectionError, APIResponseValidationError, APIStatusErro
 from personalos.config import get_settings
 from personalos.models import User
 from personalos.security import decrypt_config
+from personalos.services.network import validate_public_url
 
 
 def endpoint_key(private: dict, key_name: str, endpoint: str, default_endpoint: str, default_key: str) -> str:
@@ -58,6 +61,27 @@ class ChatConfiguration:
                 "chat_config_source": self.source if self.configured else "missing"}
 
 
+async def validate_chat_endpoint(base_url: str) -> None:
+    # Administrators may deliberately host a trusted local compatible model.
+    # User overrides never inherit that network trust, even with a personal key.
+    default = get_settings().openai_base_url.strip().rstrip("/")
+    if base_url.strip().rstrip("/") != default:
+        await validate_public_url(base_url)
+
+
+@asynccontextmanager
+async def chat_model_parameters(parameters: dict, *, timeout: float | None = None):
+    await validate_chat_endpoint(parameters["base_url"])
+    if parameters.get("http_async_client") is not None:
+        # Injected clients belong to server composition/protocol fixtures, not
+        # user preferences. Their lifecycle remains with the injecting owner.
+        yield parameters
+        return
+    async with httpx.AsyncClient(timeout=timeout if timeout is not None else parameters.get("timeout", 60),
+                                 follow_redirects=False) as client:
+        yield {**parameters, "http_async_client": client}
+
+
 async def test_chat_connection(configuration: ChatConfiguration) -> dict:
     parameters = configuration.parameters()
     # The official SDK preserves compatible providers' max_tokens field. The
@@ -66,15 +90,18 @@ async def test_chat_connection(configuration: ChatConfiguration) -> dict:
     reasoning = configuration.model.startswith(("o1", "o3", "o4", "gpt-5"))
     budget = {"max_completion_tokens": 512} if host == "api.openai.com" and reasoning else {"max_tokens": 32}
     try:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=False) as http:
-            async with AsyncOpenAI(api_key=configuration.api_key, base_url=configuration.base_url,
-                                   max_retries=0, timeout=20, http_client=http) as client:
-                response = await client.chat.completions.create(
-                    model=configuration.model, messages=[{"role": "user", "content": "Reply exactly OK."}],
-                    stream=False, **budget, **({"extra_body": parameters["extra_body"]} if "extra_body" in parameters else {}))
+        # HTTPX's read timeout resets for every chunk; this outer deadline also
+        # bounds DNS and a provider that keeps sending tiny response fragments.
+        async with asyncio.timeout(20):
+            async with chat_model_parameters(parameters, timeout=20) as prepared:
+                async with AsyncOpenAI(api_key=configuration.api_key, base_url=configuration.base_url,
+                                       max_retries=0, timeout=20, http_client=prepared["http_async_client"]) as client:
+                    response = await client.chat.completions.create(
+                        model=configuration.model, messages=[{"role": "user", "content": "Reply exactly OK."}],
+                        stream=False, **budget, **({"extra_body": parameters["extra_body"]} if "extra_body" in parameters else {}))
         if not response.choices or not response.choices[0].message.content or not response.choices[0].message.content.strip():
             raise HTTPException(502, "Chat provider returned no text; verify model access and compatibility")
-    except (APITimeoutError, APIConnectionError) as exc:
+    except (TimeoutError, APITimeoutError, APIConnectionError) as exc:
         raise HTTPException(502, "Chat provider timed out or could not be reached; check Base URL and network") from exc
     except APIStatusError as exc:
         raise HTTPException(429 if exc.status_code == 429 else 502,

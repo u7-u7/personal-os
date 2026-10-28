@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUpRight,
@@ -48,6 +48,30 @@ import {
   SettingsPage,
   TasksPage,
 } from "@/components/workspace-pages";
+
+const AUTH_CHANGE_CHANNEL = "personalos-auth";
+const AUTH_CHANGE_STORAGE_KEY = "personalos-auth-change";
+// This is only message correlation, never a credential or permission token.
+const AUTH_TAB_ID = typeof window === "undefined" ? "" : `${Date.now()}-${Math.random()}`;
+const AUTH_CACHE_OWNER_KEY = ["auth-cache-owner"];
+function announceAuthChange() {
+  if (typeof BroadcastChannel !== "undefined") {
+    try {
+      const channel = new BroadcastChannel(AUTH_CHANGE_CHANNEL);
+      channel.postMessage({ type: "changed", source: AUTH_TAB_ID });
+      channel.close();
+      return;
+    } catch {
+      // Some private browser policies deny channels; storage is the fallback.
+    }
+  }
+  try {
+    // Broadcast only a nonce, never an account identifier or session token.
+    localStorage.setItem(AUTH_CHANGE_STORAGE_KEY, crypto.randomUUID());
+  } catch {
+    // Focus refetch still checks the session when browser messaging is denied.
+  }
+}
 const navigation = [
   { id: "dashboard", label: "Overview", icon: LayoutDashboard },
   { id: "chat", label: "AI assistant", icon: MessageSquare },
@@ -65,7 +89,102 @@ export function Workspace({ section }: { section: string }) {
     queryKey: ["me"],
     queryFn: () => api<User>("/auth/me"),
     retry: false,
+    staleTime: 0,
+    refetchOnWindowFocus: "always",
   });
+  const { refetch: refetchUser } = user;
+  const [authRefreshing, setAuthRefreshing] = useState(false);
+  const observedOwner = user.error ? undefined : user.data?.id;
+  const [cacheOwner, setCacheOwner] = useState<string | undefined>(
+    () => client.getQueryData<string>(AUTH_CACHE_OWNER_KEY) || observedOwner,
+  );
+  const [identityMismatch, setIdentityMismatch] = useState(false);
+  const refreshIdentityRef = useRef<(() => void) | null>(null);
+  // Hide the previous subtree before committing a new identity's header. A
+  // focus refetch can discover a cookie change even when no broadcast arrived.
+  if (observedOwner && observedOwner !== cacheOwner && !authRefreshing) {
+    if (!cacheOwner) setCacheOwner(observedOwner);
+    else if (!identityMismatch) setIdentityMismatch(true);
+  }
+  useEffect(() => {
+    let active = true;
+    let running = false;
+    let changedAgain = false;
+    async function refreshIdentity() {
+      if (!active) return;
+      changedAgain = true;
+      if (running) return;
+      running = true;
+      setAuthRefreshing(true);
+      try {
+        do {
+          changedAgain = false;
+          await client.cancelQueries();
+          if (!active) return;
+          client.clear();
+          const result = await refetchUser();
+          if (!active) return;
+          if (!changedAgain) {
+            setCacheOwner(result.error ? undefined : result.data?.id);
+            setIdentityMismatch(false);
+          }
+        } while (active && changedAgain);
+      } finally {
+        running = false;
+        if (active) setAuthRefreshing(false);
+      }
+    }
+    const receive = () => void refreshIdentity();
+    refreshIdentityRef.current = receive;
+    const storageChanged = (event: StorageEvent) => {
+      if (event.key === AUTH_CHANGE_STORAGE_KEY) receive();
+    };
+    let channel: BroadcastChannel | undefined;
+    try {
+      if (typeof BroadcastChannel !== "undefined") {
+        channel = new BroadcastChannel(AUTH_CHANGE_CHANNEL);
+        channel.onmessage = (event: MessageEvent<unknown>) => {
+          const message = event.data;
+          if (
+            message === "changed" ||
+            (typeof message === "object" &&
+              message !== null &&
+              "type" in message &&
+              message.type === "changed" &&
+              "source" in message &&
+              message.source !== AUTH_TAB_ID)
+          )
+            receive();
+        };
+      }
+    } catch {
+      // The storage listener below also handles unavailable channel support.
+    }
+    window.addEventListener("storage", storageChanged);
+    return () => {
+      active = false;
+      if (refreshIdentityRef.current === receive)
+        refreshIdentityRef.current = null;
+      channel?.close();
+      window.removeEventListener("storage", storageChanged);
+    };
+  }, [client, refetchUser]);
+  useEffect(() => {
+    if (identityMismatch) refreshIdentityRef.current?.();
+  }, [identityMismatch]);
+  useEffect(() => {
+    if (
+      cacheOwner &&
+      observedOwner === cacheOwner &&
+      !authRefreshing &&
+      !identityMismatch
+    ) {
+      // This marker describes all owner-less query keys, including ones still
+      // observed on another route. Retain it until the same cache is cleared.
+      client.setQueryDefaults(AUTH_CACHE_OWNER_KEY, { gcTime: Infinity });
+      client.setQueryData(AUTH_CACHE_OWNER_KEY, cacheOwner);
+    }
+  }, [client, cacheOwner, observedOwner, authRefreshing, identityMismatch]);
   const configuration = useQuery({
     queryKey: ["settings", user.data?.id],
     queryFn: () => api<Settings>("/settings"),
@@ -98,10 +217,12 @@ export function Workspace({ section }: { section: string }) {
   }
   async function logout() {
     await api("/auth/logout", { method: "POST" });
+    announceAuthChange();
     client.clear();
     await user.refetch();
   }
   async function signedIn() {
+    announceAuthChange();
     // Login may follow an expired session: never retain another account's data.
     await client.cancelQueries();
     client.clear();
@@ -117,7 +238,7 @@ export function Workspace({ section }: { section: string }) {
       // The authenticated workspace shows a retryable configuration error.
     }
   }
-  if (user.isPending)
+  if (user.isPending || authRefreshing || identityMismatch)
     return (
       <div className="boot">
         <span className="brand-mark">
