@@ -1,0 +1,93 @@
+name: personalos
+x-api: &api
+  image: personalos-api:${PERSONALOS_IMAGE_TAG:-local}
+  build:
+    context: .
+    dockerfile: apps/api/Dockerfile
+    args:
+      PYPI_INDEX_URL: ${PYPI_INDEX_URL:-https://pypi.org/simple}
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-personalos}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-personalos}
+    REDIS_URL: redis://redis:6379/0
+    APP_URL: ${APP_URL:-http://localhost:3000}
+    WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+    GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:3000/api/calendar/oauth/callback}
+  init: true
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-personalos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-personalos}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, 'yes']
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+  migrate:
+    <<: *api
+    command: [uv, run, --frozen, alembic, upgrade, head]
+    restart: 'no'
+    depends_on:
+      postgres:
+        condition: service_healthy
+  api:
+    <<: *api
+    command: [uv, run, --frozen, uvicorn, personalos.main:app, --host, 0.0.0.0, --port, '8000']
+    ports:
+      - '127.0.0.1:${API_PORT:-8000}:8000'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, /app/.venv/bin/python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+  worker:
+    <<: *api
+    command: [uv, run, --frozen, python, -m, personalos.worker]
+    depends_on:
+      api:
+        condition: service_healthy
+  web:
+    image: personalos-web:${PERSONALOS_IMAGE_TAG:-local}
+    build:
+      context: apps/web
+      args:
+        API_URL: http://api:8000
+    environment:
+      API_URL: http://api:8000
+      HOSTNAME: 0.0.0.0
+      PORT: '3000'
+    init: true
+    ports:
+      - '127.0.0.1:${WEB_PORT:-3000}:3000'
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

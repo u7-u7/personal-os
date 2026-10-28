@@ -1,0 +1,6 @@
+# Publish infrastructure only on loopback for running API/Web outside containers.
+services:
+  postgres:
+    ports: ['127.0.0.1:54329:5432']
+  redis:
+    ports: ['127.0.0.1:63799:6379']

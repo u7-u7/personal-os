@@ -26,3 +26,5 @@ REQ-A/B/J→DES-01；REQ-C/E/I→DES-02；REQ-F/H→DES-03；REQ-D/G/H→DES-04�
 
 ## 验证与风险
 高风险集成测试：跨用户访问、CAS、审批绑定、防重复与恢复、记忆删除、模型未配置失败；Playwright 真页面注册/任务/记忆/导航截图。外部授权未给出时保留验收门槛。服务/框架兼容性必须安装运行验证，不能只凭代码推断。
+
+DES-01 embedding update (REQ-B-EMBED): select the Beijing Qwen3.7 Flash preset with independent encrypted user credentials, strict provider-owned endpoint syntax and a separate real connectivity probe. Configuration saves do not depend on DNS availability; only the explicit probe makes a provider request, with standard HTTPS certificate validation. The Hy bridge isolates owner/model/endpoint/dimensions across vector/cache/history paths and remains gated; no vector-table migration or automatic indexing is introduced.

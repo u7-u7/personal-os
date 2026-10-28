@@ -1,0 +1,14 @@
+{
+  "scenario": "Real independent process with missing model credentials",
+  "worker_processes": 2,
+  "worker_exit_codes": [
+    0,
+    0
+  ],
+  "persisted_occurrences": 1,
+  "status": "failed",
+  "attempts": 1,
+  "result_empty": true,
+  "external_model_invoked": false,
+  "claim": "Unconfigured dependency fails visibly; restarting does not replay the one-time schedule."
+}

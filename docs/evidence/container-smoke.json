@@ -1,0 +1,16 @@
+{
+  "runtime": "Docker Compose isolated PostgreSQL17/Redis/API/Worker",
+  "health": true,
+  "real_cookie_auth": true,
+  "task_persisted": true,
+  "memory_confirmed_in_postgres_store": true,
+  "calendar_overlap_rejected": true,
+  "independent_worker_claimed": true,
+  "briefing_handler_persisted": true,
+  "worker_status": "failed",
+  "failure_reason": "No external model credential configured",
+  "occurrences": 1,
+  "attempts": 1,
+  "external_model_invoked": false,
+  "export_excludes_credentials": true
+}
