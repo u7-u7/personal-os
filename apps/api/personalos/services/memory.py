@@ -1,13 +1,12 @@
 """Consent-controlled memory. Relational facts remain separate from conversation state."""
 from fastapi import HTTPException
 import hashlib
-import json
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from personalos.db import utcnow
 from personalos.models import Record, User
 from personalos.services.records import audit, cas_update, create_record, owned
+from personalos.services.accounts import account_lease
 
 
 class MemoryService:
@@ -31,6 +30,10 @@ class MemoryService:
         return [{"id": row.id, "content": row.content, "source": row.data.get("source")} for row in scored[:limit]]
 
     async def confirm(self, memory_id: str, version: int) -> Record:
+        with account_lease(self.db, self.owner_id):
+            return await self._confirm(memory_id, version)
+
+    async def _confirm(self, memory_id: str, version: int) -> Record:
         row = owned(self.db, Record, self.owner_id, memory_id)
         if row.kind != "memory":
             raise HTTPException(404, "Memory not found")
@@ -70,35 +73,8 @@ class MemoryService:
                 self.db.commit()
         return row
 
-    async def delete(self, memory_id: str, version: int) -> dict:
-        row = owned(self.db, Record, self.owner_id, memory_id)
-        if row.kind != "memory":
-            raise HTTPException(404, "Memory not found")
-        provider_id = row.extra.get("hy_memory_id")
-        erased_content = row.content
-        # Legacy proposal audits may contain a raw fact; retain the audit event
-        # but remove copied personal content before returning the deletion receipt.
-        if erased_content:
-            audits = self.db.scalars(select(Record).where(Record.owner_id == self.owner_id, Record.kind == "activity")).all()
-            for event in audits:
-                if erased_content in json.dumps(event.data, ensure_ascii=False):
-                    event.data = {"action": event.data.get("action", "memory.audit_redacted"),
-                                  "target_id": event.data.get("target_id", ""),
-                                  "details": {"redacted_for_memory_id": memory_id}}
-                    event.version += 1
-        row = cas_update(self.db, Record, self.owner_id, memory_id, version, {
-            "deleted_at": utcnow(), "content": "", "status": "deletion_pending" if provider_id else "deleted",
-            "data": {"source": "deleted"}, "extra": {**row.extra, "deletion": "provider_pending" if provider_id else "local_complete"}})
-        self.db.commit()
-        if self.store:
-            await self.store.adelete((self.owner_id, "memories"), memory_id)
-        if provider_id:
-            if not self.hy_memory:
-                audit(self.db, self.owner_id, "memory.deletion_pending", memory_id, status="blocked")
-                self.db.commit()
-                return {"deleted": True, "provider_purge_verified": False, "status": "deletion_pending"}
-            receipt = await self.hy_memory.delete(self.owner_id, provider_id)
-            audit(self.db, self.owner_id, "memory.provider_delete", memory_id, {"receipt": str(receipt)})
-        audit(self.db, self.owner_id, "memory.deleted", memory_id)
-        self.db.commit()
-        return {"deleted": True, "provider_purge_verified": not bool(provider_id), "status": row.status}
+    async def delete(self, memory_id: str, version: int, *, approval_id: str | None = None, saver=None) -> dict:
+        from personalos.services.memory_deletion import MemoryDeletion
+        with account_lease(self.db, self.owner_id, exclusive=True):
+            return await MemoryDeletion(self.db, self.owner_id, self.store, saver, self.hy_memory).run(
+                memory_id, version, approval_id or f"direct:{memory_id}:{version}")

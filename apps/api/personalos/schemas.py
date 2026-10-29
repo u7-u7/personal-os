@@ -149,3 +149,8 @@ class IntegrationInput(BaseModel):
     trusted: bool = False
     permissions: list[str] = Field(default_factory=list, max_length=100)
     extra: dict = Field(default_factory=dict)
+
+
+class ResumeApprovalInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int = Field(ge=1, strict=True)

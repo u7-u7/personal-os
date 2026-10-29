@@ -96,13 +96,8 @@ async def _execute_approval(db: Session, owner_id: str, row: Record) -> dict:
     if tool == "memory.delete":
         from personalos.services.agent import durable_graph_resources
         async with durable_graph_resources() as (saver, store):
-            result = await MemoryService(db, owner_id, store=store).delete(args["id"], args["version"])
-            # Tool recall results can be embedded in checkpoints. Drop this user's
-            # resumable graph state, while leaving explicit conversation history under user control.
-            from personalos.services.records import list_records
-            for session in list_records(db, owner_id, "chat_session", 10000):
-                await saver.adelete_thread(f"{owner_id}:{session.id}")
-            return {**result, "checkpoint_state_cleared": True, "conversation_history_retained": True}
+            return await MemoryService(db, owner_id, store=store).delete(
+                args["id"], args["version"], approval_id=row.id, saver=saver)
     if tool == "record.delete":
         target = owned(db, Record, owner_id, args["id"])
         if target.kind not in {"task", "event", "integration"}:

@@ -8,7 +8,8 @@ from typing import Annotated
 
 import httpx
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
 from sqlalchemy import func, select, text, update
@@ -18,7 +19,7 @@ from sqlalchemy.orm import Session
 from personalos.config import get_settings
 from personalos.db import get_db, utcnow
 from personalos.models import AuthSession, Automation, Execution, Message, Record, User
-from personalos.schemas import (ApprovalInput, AutomationInput, ChatInput, Credentials, EventInput,
+from personalos.schemas import (ApprovalInput, ResumeApprovalInput, AutomationInput, ChatInput, Credentials, EventInput,
                                ChatDiagnosticsInput, EmbeddingDiagnosticsInput, IntegrationInput, MemoryInput, SettingsInput, TaskInput)
 from personalos.security import (COOKIE_NAME, current_user, decrypt_config, encrypt_config,
                                 new_session, password_hasher)
@@ -27,6 +28,7 @@ from personalos.services.automations import create_automation, list_automations,
 from personalos.services.accounts import account_lease, assert_account_writable
 from personalos.services.calendar import ensure_google_no_conflict, get_google_event, google_connection, list_google_events, oauth_complete, oauth_start
 from personalos.services.memory import MemoryService
+from personalos.services.memory_deletion import approval_views, RECOVERABLE
 from personalos.services.network import validate_public_url
 from personalos.services.records import (audit, cas_update, create_record, ensure_no_conflict,
                                         list_events, list_records, owned, patch_record, query_tasks, serialize)
@@ -398,12 +400,24 @@ def call_tool(item_id: str, user: Viewer, db: DB, payload: dict = Body(...)):
 
 
 @app.get("/api/approvals")
-def approvals(user: Viewer, db: DB):
-    return [serialize(row) for row in list_records(db, user.id, "approval")]
+def approvals(user: Viewer, db: DB, limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0)):
+    rows = list(db.scalars(select(Record).where(Record.owner_id == user.id, Record.kind == "approval",
+        Record.deleted_at.is_(None)).order_by(Record.created_at.desc(), Record.id.desc()).limit(limit).offset(offset)).all())
+    return approval_views(db, user.id, rows)
 
 
 @app.post("/api/approvals/{item_id}/resolve")
 async def resolve_approval(item_id: str, payload: ApprovalInput, user: Viewer, db: DB):
+    row = owned(db, Record, user.id, item_id)
+    if row.data.get("tool") == "memory.delete" and payload.decision == "approved":
+        # Claim and final status share the same lease as erasure; a concurrent
+        # recovery must not mark a genuinely running approval as failed.
+        with account_lease(db, user.id, exclusive=True):
+            return await _resolve_approval(item_id, payload, user, db)
+    return await _resolve_approval(item_id, payload, user, db)
+
+
+async def _resolve_approval(item_id: str, payload: ApprovalInput, user: User, db: Session):
     row = owned(db, Record, user.id, item_id)
     if row.kind != "approval" or row.status != "pending":
         raise HTTPException(409, "Approval has already been resolved")
@@ -415,30 +429,70 @@ async def resolve_approval(item_id: str, payload: ApprovalInput, user: Viewer, d
     db.commit()
     if status == "rejected":
         return serialize(row)
+    return await _finish_approval(db, user.id, row)
+
+
+async def _finish_approval(db: Session, owner_id: str, row: Record):
+    item_id = row.id
     try:
-        result = await execute_approval(db, user.id, row)
+        result = await execute_approval(db, owner_id, row)
     except Exception as exc:
         db.rollback()
-        row = owned(db, Record, user.id, item_id)
+        row = owned(db, Record, owner_id, item_id)
         external_write = row.data.get("tool") in {"calendar.create_external", "calendar.update_external", "calendar.delete_external", "mcp.call", "calendar.disconnect"}
         uncertain = isinstance(exc, (TimeoutError, httpx.TransportError)) or (external_write and isinstance(exc, HTTPException) and exc.status_code >= 500)
         row.status = "outcome_unknown" if uncertain else "failed"
+        row.version += 1
+        row.updated_at = utcnow()
         row.data = {**row.data, "error_type": type(exc).__name__}
-        audit(db, user.id, "approval.execution_failed", item_id, {"error_type": type(exc).__name__}, status=row.status)
+        audit(db, owner_id, "approval.execution_failed", item_id, {"error_type": type(exc).__name__}, status=row.status)
         db.commit()
+        if row.data.get("tool") == "memory.delete":
+            code = exc.status_code if isinstance(exc, HTTPException) else 503
+            detail = exc.detail if isinstance(exc, HTTPException) and code in {403, 404, 409, 410, 422} else "Memory cleanup interrupted; resume the original approval in Activity"
+            raise HTTPException(code, detail) from exc
         if isinstance(exc, HTTPException):
             raise HTTPException(exc.status_code, f"Approved operation blocked: {exc.detail}. Request a new approval after resolving this condition") from exc
         raise HTTPException(502, "Approved operation failed. Inspect Activity before retrying") from exc
-    row = owned(db, Record, user.id, item_id)
-    row.status = "approved"
+    row = owned(db, Record, owner_id, item_id)
+    pending_cleanup = row.data.get("tool") == "memory.delete" and not result.get("cleanup_complete", False)
+    row.status = "cleanup_pending" if pending_cleanup else "approved"
     row.version += 1
+    row.updated_at = utcnow()
+    row.data = {key: value for key, value in row.data.items() if key != "error_type"}
     row.data = {**row.data, "result": result, "executed_at": utcnow().isoformat()}
     if row.data.get("tool") == "account.delete":
         row.title, row.content, row.extra = "Account deletion completed", "", {}
         row.data = {"tool": "account.delete", "result": result, "executed_at": utcnow().isoformat()}
-    audit(db, user.id, "approval.executed", item_id, {"tool": row.data["tool"]})
+    audit(db, owner_id, "memory.cleanup_pending" if pending_cleanup else "approval.executed", item_id,
+          {"tool": row.data["tool"]}, status="blocked" if pending_cleanup else "succeeded")
     db.commit()
-    return serialize(row)
+    view = approval_views(db, owner_id, [row])[0]
+    return JSONResponse(status_code=202, content=jsonable_encoder(view)) if pending_cleanup else view
+
+
+@app.post("/api/approvals/{item_id}/resume")
+async def resume_approval(item_id: str, payload: ResumeApprovalInput, user: Viewer, db: DB):
+    row = owned(db, Record, user.id, item_id)
+    if row.kind != "approval" or row.data.get("tool") != "memory.delete":
+        raise HTTPException(403, "Only an approved memory deletion can be resumed")
+    with account_lease(db, user.id, exclusive=True):
+        db.refresh(row)
+        if row.version != payload.version:
+            raise HTTPException(409, "Approval changed. Refresh before resuming")
+        if row.status == "approved" and row.data.get("result", {}).get("cleanup_complete"):
+            return approval_views(db, user.id, [row])[0]
+        legacy_pending = row.status == "approved" and row.data.get("result", {}).get("status") == "deletion_pending"
+        if row.status not in RECOVERABLE and not legacy_pending:
+            raise HTTPException(409, "This approval has no authorized cleanup to resume")
+        args = row.data["arguments"]
+        target = db.scalar(select(Record).where(Record.id == args["id"], Record.owner_id == user.id, Record.kind == "memory"))
+        if row.due_at and row.due_at < utcnow() and (target is None or target.deleted_at is None):
+            raise HTTPException(409, "Approval expired before deletion started; request fresh approval")
+        row = cas_update(db, Record, user.id, item_id, payload.version, {"status": "executing"})
+        audit(db, user.id, "memory.cleanup_resumed", item_id)
+        db.commit()
+        return await _finish_approval(db, user.id, row)
 
 
 @app.get("/api/activity")
@@ -639,7 +693,7 @@ def dashboard(user: Viewer, db: DB):
     events = [serialize(r) for r in list_events(db, user.id, 4, start=start, end=start + timedelta(days=7))]
     memories = [serialize(r) for r in list_records(db, user.id, "memory")]
     automation_rows = [serialize(row) for row in list_automations(db, user.id)]
-    approval_rows = approvals(user, db)
+    approval_rows = approvals(user, db, 100, 0)
     briefing_rows = list_records(db, user.id, "briefing", 1)
     task_count = db.scalar(select(func.count()).select_from(Record).where(Record.owner_id == user.id, Record.kind == "task", Record.deleted_at.is_(None), Record.status.not_in(["done", "cancelled"])))
     memory_count = db.scalar(select(func.count()).select_from(Record).where(Record.owner_id == user.id, Record.kind == "memory", Record.deleted_at.is_(None), Record.status == "confirmed"))

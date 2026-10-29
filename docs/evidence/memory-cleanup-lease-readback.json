@@ -1,0 +1,12 @@
+{
+  "delete_during_confirmation_http": 409,
+  "busy_does_not_claim_approval": true,
+  "old_target_version_http": 409,
+  "live_memory_survives_stale_approval": true,
+  "agent_shared_during_cleanup_http": 409,
+  "foreign_checkpoint_tables": {
+    "checkpoints": 6,
+    "checkpoint_blobs": 6,
+    "checkpoint_writes": 6
+  }
+}

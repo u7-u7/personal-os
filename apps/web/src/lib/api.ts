@@ -27,6 +27,16 @@ export interface RecordItem {
   permissions?: string[];
   action?: string;
   action_type?: string;
+  tool?: string;
+  can_resume?: boolean;
+  cleanup?: {
+    state: string;
+    canonical_erased: boolean;
+    store: string;
+    checkpoints: string;
+    provider: string;
+    last_error_type?: string;
+  };
   result?: unknown;
   error?: string;
   arguments?: Record<string, unknown>;

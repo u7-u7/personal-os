@@ -1,0 +1,327 @@
+{
+  "store_before:seed_graph": {
+    "seeded_real_graph_threads": 2
+  },
+  "checkpoints:seed_graph": {
+    "seeded_real_graph_threads": 3
+  },
+  "expired:expire": {
+    "updated_qa_approval_only": true
+  },
+  "store_before:fail_store_before": {
+    "http": 503,
+    "approval_status": "failed",
+    "approval_version": 3,
+    "canonical_erased": true,
+    "memory_status": "deletion_pending",
+    "cleanup": {
+      "canonical_erased": true,
+      "state": "pending",
+      "store": "pending",
+      "checkpoints": "pending",
+      "provider": "not_required",
+      "last_error_type": "RuntimeError"
+    },
+    "can_resume": true,
+    "store_absent": false,
+    "checkpoint_tables": {
+      "checkpoints": 6,
+      "checkpoint_blobs": 6,
+      "checkpoint_writes": 6
+    }
+  },
+  "store_after:fail_store_after": {
+    "http": 503,
+    "approval_status": "failed",
+    "approval_version": 3,
+    "canonical_erased": true,
+    "memory_status": "deletion_pending",
+    "cleanup": {
+      "canonical_erased": true,
+      "state": "pending",
+      "store": "pending",
+      "checkpoints": "pending",
+      "provider": "not_required",
+      "last_error_type": "RuntimeError"
+    },
+    "can_resume": true,
+    "store_absent": true,
+    "checkpoint_tables": {
+      "checkpoints": 6,
+      "checkpoint_blobs": 6,
+      "checkpoint_writes": 6
+    }
+  },
+  "legacy:legacy_failure": {
+    "http": 503,
+    "approval_status": "failed",
+    "approval_version": 3,
+    "canonical_erased": true,
+    "memory_status": "deleted",
+    "cleanup": {
+      "canonical_erased": true,
+      "state": "unknown",
+      "store": "unknown",
+      "checkpoints": "unknown",
+      "provider": "unknown",
+      "last_error_type": null
+    },
+    "can_resume": true,
+    "store_absent": true,
+    "checkpoint_tables": {
+      "checkpoints": 6,
+      "checkpoint_blobs": 6,
+      "checkpoint_writes": 6
+    }
+  },
+  "checkpoints:fail_checkpoint": {
+    "http": 503,
+    "approval_status": "failed",
+    "approval_version": 3,
+    "canonical_erased": true,
+    "memory_status": "deletion_pending",
+    "cleanup": {
+      "canonical_erased": true,
+      "state": "pending",
+      "store": "complete",
+      "checkpoints": "pending",
+      "provider": "not_required",
+      "last_error_type": "RuntimeError"
+    },
+    "can_resume": true,
+    "store_absent": true,
+    "checkpoint_tables": {
+      "checkpoints": 6,
+      "checkpoint_blobs": 6,
+      "checkpoint_writes": 6
+    }
+  },
+  "foreign_sentinel:seed_graph": {
+    "seeded_real_graph_threads": 2
+  },
+  "observed_process_exits": {
+    "crash_observed": {
+      "process_exit": 73
+    },
+    "before_observed": {
+      "process_exit": 74
+    }
+  },
+  "store_after:resume": {
+    "http": 200,
+    "approval_status": "approved",
+    "approval_version": 5,
+    "canonical_erased": true,
+    "memory_status": "deleted",
+    "cleanup": {
+      "canonical_erased": true,
+      "state": "complete",
+      "store": "complete",
+      "checkpoints": "complete",
+      "provider": "not_required",
+      "last_error_type": null
+    },
+    "can_resume": false,
+    "store_absent": true,
+    "checkpoint_tables": {
+      "checkpoints": 0,
+      "checkpoint_blobs": 0,
+      "checkpoint_writes": 0
+    }
+  },
+  "legacy:resume": {
+    "http": 200,
+    "approval_status": "approved",
+    "approval_version": 5,
+    "canonical_erased": true,
+    "memory_status": "deleted",
+    "cleanup": {
+      "canonical_erased": true,
+      "state": "complete",
+      "store": "complete",
+      "checkpoints": "complete",
+      "provider": "not_required",
+      "last_error_type": null
+    },
+    "can_resume": false,
+    "store_absent": true,
+    "checkpoint_tables": {
+      "checkpoints": 0,
+      "checkpoint_blobs": 0,
+      "checkpoint_writes": 0
+    }
+  },
+  "crash_observed:resume": {
+    "http": 200,
+    "approval_status": "approved",
+    "approval_version": 4,
+    "canonical_erased": true,
+    "memory_status": "deleted",
+    "cleanup": {
+      "canonical_erased": true,
+      "state": "complete",
+      "store": "complete",
+      "checkpoints": "complete",
+      "provider": "not_required",
+      "last_error_type": null
+    },
+    "can_resume": false,
+    "store_absent": true,
+    "checkpoint_tables": {
+      "checkpoints": 0,
+      "checkpoint_blobs": 0,
+      "checkpoint_writes": 0
+    }
+  },
+  "before_observed:resume": {
+    "http": 200,
+    "approval_status": "approved",
+    "approval_version": 4,
+    "canonical_erased": true,
+    "memory_status": "deleted",
+    "cleanup": {
+      "canonical_erased": true,
+      "state": "complete",
+      "store": "complete",
+      "checkpoints": "complete",
+      "provider": "not_required",
+      "last_error_type": null
+    },
+    "can_resume": false,
+    "store_absent": true,
+    "checkpoint_tables": {
+      "checkpoints": 0,
+      "checkpoint_blobs": 0,
+      "checkpoint_writes": 0
+    }
+  },
+  "provider:resolve": {
+    "http": 202,
+    "approval_status": "cleanup_pending",
+    "approval_version": 3,
+    "canonical_erased": true,
+    "memory_status": "deletion_pending",
+    "cleanup": {
+      "canonical_erased": true,
+      "state": "pending",
+      "store": "complete",
+      "checkpoints": "complete",
+      "provider": "authorization_required",
+      "last_error_type": null
+    },
+    "can_resume": true,
+    "store_absent": true,
+    "checkpoint_tables": {
+      "checkpoints": 0,
+      "checkpoint_blobs": 0,
+      "checkpoint_writes": 0
+    }
+  },
+  "provider:resume": {
+    "http": 202,
+    "approval_status": "cleanup_pending",
+    "approval_version": 5,
+    "canonical_erased": true,
+    "memory_status": "deletion_pending",
+    "cleanup": {
+      "canonical_erased": true,
+      "state": "pending",
+      "store": "complete",
+      "checkpoints": "complete",
+      "provider": "authorization_required",
+      "last_error_type": null
+    },
+    "can_resume": true,
+    "store_absent": true,
+    "checkpoint_tables": {
+      "checkpoints": 0,
+      "checkpoint_blobs": 0,
+      "checkpoint_writes": 0
+    }
+  },
+  "store_before:expire": {
+    "updated_qa_approval_only": true
+  },
+  "expired:resolve": {
+    "http": 409,
+    "approval_status": "pending",
+    "approval_version": 1,
+    "canonical_erased": false,
+    "memory_status": "confirmed",
+    "cleanup": null,
+    "can_resume": false,
+    "store_absent": false,
+    "checkpoint_tables": {
+      "checkpoints": 0,
+      "checkpoint_blobs": 0,
+      "checkpoint_writes": 0
+    }
+  },
+  "checkpoints:completed_replay": {
+    "http": 200,
+    "approval_status": "approved",
+    "approval_version": 5,
+    "canonical_erased": true,
+    "memory_status": "deleted",
+    "cleanup": {
+      "canonical_erased": true,
+      "state": "complete",
+      "store": "complete",
+      "checkpoints": "complete",
+      "provider": "not_required",
+      "last_error_type": null
+    },
+    "can_resume": false,
+    "store_absent": true,
+    "checkpoint_tables": {
+      "checkpoints": 9,
+      "checkpoint_blobs": 9,
+      "checkpoint_writes": 9
+    },
+    "note": "New explicit QA graph state was seeded after initial complete cleanup; completed approval replay preserves this later state."
+  },
+  "crash:resume": {
+    "http": 200,
+    "approval_status": "approved",
+    "approval_version": 4,
+    "canonical_erased": true,
+    "memory_status": "deleted",
+    "cleanup": {
+      "canonical_erased": true,
+      "state": "complete",
+      "store": "complete",
+      "checkpoints": "complete",
+      "provider": "not_required",
+      "last_error_type": null
+    },
+    "can_resume": false,
+    "store_absent": true,
+    "checkpoint_tables": {
+      "checkpoints": 0,
+      "checkpoint_blobs": 0,
+      "checkpoint_writes": 0
+    }
+  },
+  "before:resume": {
+    "http": 200,
+    "approval_status": "approved",
+    "approval_version": 4,
+    "canonical_erased": true,
+    "memory_status": "deleted",
+    "cleanup": {
+      "canonical_erased": true,
+      "state": "complete",
+      "store": "complete",
+      "checkpoints": "complete",
+      "provider": "not_required",
+      "last_error_type": null
+    },
+    "can_resume": false,
+    "store_absent": true,
+    "checkpoint_tables": {
+      "checkpoints": 0,
+      "checkpoint_blobs": 0,
+      "checkpoint_writes": 0
+    }
+  }
+}

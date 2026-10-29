@@ -1,0 +1,5 @@
+{
+  "old_method_tombstone_retry_http": 404,
+  "baseline_commit": "446f6df",
+  "note": "Original method still cannot address an existing tombstone; candidate recovery previously completed the same QA target."
+}

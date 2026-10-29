@@ -1,0 +1,15 @@
+{
+  "shared_allowed_when_only_provider_pending": true,
+  "ambiguous_legacy_not_offered": true,
+  "different_approval_not_offered": true,
+  "ambiguous_legacy_resume_http": 409,
+  "different_approval_resume_http": 409,
+  "expired_before_start_resume_http": 409,
+  "foreign_resume_http": 404,
+  "foreign_approvals_empty": true,
+  "foreign_sentinels_after_all_cleanup": {
+    "checkpoints": 6,
+    "checkpoint_blobs": 6,
+    "checkpoint_writes": 6
+  }
+}
