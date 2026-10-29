@@ -68,3 +68,13 @@
 - [x] 本地Memory删除中断恢复：原审批绑定journal、阶段持久化、全会话keyset、进程重启和写入fence、Activity继续清理；真实Store/检查点故障及10001会话验收通过。Hy索引/缓存仍待真实授权，不计为完成。见memory-deletion-recovery SDD与报告。
 
 完整证据见 `docs/progress/2026-10-29-workspace-modules.md`。
+
+## 2026-10-30 完整词法候选召回
+
+- [x] 修复MemoryService召回500条预截断，三个调用方共享全owner confirmed/live候选；200批次命名游标、有界top-k、稳定同分、保留来源和原匹配规则。
+- [x] 隔离真实PG的10004有效QA事实复现旧缺口并验证修复；实际工具、用户/状态隔离、字面词、回退、取消/超时/数据库错误传播通过，未调用模型或外部provider。
+- [x] 公共扫描30秒协作式预算，取消关闭游标不返回partial；大词项实际31.7055秒超时后可继续查询。现有51项后端和完整E2E通过，未新增测试。
+- [ ] 中文语义/分词质量、零命中相关性和任务绑定Working Memory生产链路；本轮没有以词法候选完整性替代这些要求。
+- [ ] Hy/Jev授权数据面与真实模型工具选择/提取/简报质量继续按原条件保留，未重试暂停的模型网络检查。
+
+证据见 `docs/progress/2026-10-30-memory-recall-completeness.md`；远程CI/合并状态见当前PR。

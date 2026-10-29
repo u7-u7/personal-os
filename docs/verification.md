@@ -1,5 +1,13 @@
 # PersonalOS verification report
 
+## Complete lexical memory candidates · 2026-10-30
+
+The shared MemoryService no longer ranks only the latest500 canonical facts. Owner/confirmed/live filters precede streaming all eligible projections; bounded top-k preserves existing Python lexical matching, recent-first fallback and source, with stable ID ties. A real named PostgreSQL cursor fetches200 per batch; cancellation and a30s cooperative scan budget close the cursor and propagate failure without partial results. Account/deletion fences remain unchanged.
+
+Fresh isolated-schema acceptance with10004 eligible QA facts reproduced the old miss and ranked the unique old fact first in the final implementation. Actual Agent tool/source, consent/type/owner, literals, ties, empty/zero-hit and limits passed. Approximately41MB of fixture content produced a1,993,310-byte Python-traced peak and0.1814s ordinary top8 observation; a2501-term request timed out at31.7055s, closed its cursor and allowed subsequent recall. This is bounded client memory, not constant total IO/CPU or a hard30s guarantee. The dominant-owner plan legitimately used Seq Scan; the selective owner used the existing owner/kind/status index. All temporary schemas were removed.
+
+Final existing backend **51 passed (32.11s)**, full Web/API E2E **1 passed (19.2s)**, Ruff/TypeScript/ESLint passed. No new tests/tables/migrations/dependencies or model/provider calls. [Detailed report, before/after evidence and remaining gates](progress/2026-10-30-memory-recall-completeness.md). Exact-head CI/container evidence belongs to the current PR.
+
 ## Interrupted memory deletion recovery · 2026-10-29
 
 Original-approval recovery now persists content-free tombstone stages for Store, all owner checkpoints and optional provider cleanup. Claim/execution/result share the exclusive lease; confirmation writes hold shared leases, and interrupted local cleanup fences new Agent/index writes until recovery. Legacy adoption is exact-version and unambiguous; no new tables/migrations/dependencies/tests.
