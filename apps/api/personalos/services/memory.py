@@ -1,7 +1,11 @@
 """Consent-controlled memory. Relational facts remain separate from conversation state."""
 from fastapi import HTTPException
+import asyncio
 import hashlib
+from heapq import nlargest
+from itertools import chain
 from sqlalchemy import select, text
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
 from personalos.models import Record, User
@@ -21,13 +25,33 @@ class MemoryService:
             "content": content, "category": category, "source": source, "status": "pending"})
 
     async def recall(self, query: str, limit: int = 8) -> list[dict]:
-        rows = self.db.scalars(select(Record).where(Record.owner_id == self.owner_id,
-                               Record.kind == "memory", Record.status == "confirmed",
-                               Record.deleted_at.is_(None)).order_by(Record.updated_at.desc()).limit(500)).all()
-        # Canonical consent/deletion filtering is always applied before a retrieved item can enter prompts.
+        if limit <= 0:
+            return []
         terms = set(query.lower().split())
-        scored = sorted(rows, key=lambda r: sum(t in r.content.lower() for t in terms), reverse=True)
-        return [{"id": row.id, "content": row.content, "source": row.data.get("source")} for row in scored[:limit]]
+        candidates = select(Record.id, Record.content, Record.data).where(
+            Record.owner_id == self.owner_id, Record.kind == "memory", Record.status == "confirmed",
+            Record.deleted_at.is_(None),
+        ).order_by(Record.updated_at.desc(), Record.id.desc())
+        if not terms:
+            candidates = candidates.limit(limit)
+
+        def relevance(row: RowMapping) -> int:
+            content = row["content"].lower()
+            return sum(term in content for term in terms)
+
+        # Rank every canonical, consented fact before applying the result limit.
+        # A server cursor and bounded heap avoid loading all ORM entities or
+        # generating a large SQL expression for long, many-word requests.
+        # Stable input order also preserves recent-first ties and zero-hit fallback.
+        rows: list[RowMapping] = []
+        async with asyncio.timeout(30):
+            with self.db.execute(candidates.execution_options(yield_per=200)) as result:
+                for batch in result.mappings().partitions(200):
+                    rows = nlargest(limit, chain(rows, batch), key=relevance)
+                    # Let deadlines/cancellation run between batches; a stopped
+                    # request closes its cursor and never returns partial recall.
+                    await asyncio.sleep(0)
+        return [{"id": row["id"], "content": row["content"], "source": row["data"].get("source")} for row in rows]
 
     async def confirm(self, memory_id: str, version: int) -> Record:
         with account_lease(self.db, self.owner_id):
