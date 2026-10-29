@@ -36,6 +36,14 @@ SSE is newline-delimited event framing (`data: {JSON}\n\n`). After persistence, 
 
 An unavailable model or missing server OAuth configuration returns 503. Provider/network failures do not become successful empty data. All event timestamps include timezones. Tool parameters are validated by Pydantic and server-owned allowlists; neither a model selection nor a decision score authorizes an operation.
 
+## Local calendar visible windows
+
+`GET /api/events` keeps its existing array response and default `limit=100`, maximum 200, with `offset>=0`. Without a window it retains the legacy creation-time ordering. CalendarPage now supplies both `start` and `end` as timezone-aware ISO timestamps for its visible 42-day grid. A missing counterpart, missing timezone or `start>=end` returns 422.
+
+Windowed results include non-deleted events owned by the current user where `event.start_at < end` and `event.end_at > start`, ordered by `start_at,id` before pagination. The page requests batches of 200 until a short page, publishes only a fully loaded window and forwards AbortSignal on navigation. This removes the previous truncation before month filtering. Offset pagination has stable ordering but does not promise a multi-request snapshot while another client edits events.
+
+The grid and daily agenda display overlapping events on every covered day, with an exclusive end boundary. Date-only Google values are interpreted as local calendar dates. Switching months moves the selected day into the target month, and an unloaded or failed source is never labeled as an empty day. Google still requires OAuth and its server-side pagination is a separate pending item; this local fix is not evidence of a live Google integration.
+
 ## Additional safety endpoints and fields
 
 `PATCH /api/calendar/google/events/{event_id}` and `DELETE` at the same path create approvals bound to the provider event and ETag. `POST /api/calendar/google/events/{event_id}/undo` requests reversal of a created event. `POST /api/integrations/{id}/disconnect` requests OAuth revocation. `POST /api/account/delete` requests full account erasure; approval is refused while an Agent is active or unresolved external memory purge remains.

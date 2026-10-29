@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Annotated
 
 import httpx
@@ -28,7 +29,7 @@ from personalos.services.calendar import ensure_google_no_conflict, get_google_e
 from personalos.services.memory import MemoryService
 from personalos.services.network import validate_public_url
 from personalos.services.records import (audit, cas_update, create_record, ensure_no_conflict,
-                                        list_records, owned, patch_record, serialize)
+                                        list_events, list_records, owned, patch_record, serialize)
 from personalos.services.tools import execute_approval, mcp_tools, request_approval
 
 logger = logging.getLogger(__name__)
@@ -235,8 +236,9 @@ def delete_memory(item_id: str, user: Viewer, db: DB, version: int = Query(..., 
 
 
 @app.get("/api/events")
-def events(user: Viewer, db: DB, limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0)):
-    return [serialize(r) for r in list_records(db, user.id, "event", limit, offset)]
+def events(user: Viewer, db: DB, limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0),
+           start: datetime | None = Query(None), end: datetime | None = Query(None)):
+    return [serialize(r) for r in list_events(db, user.id, limit, offset, start=start, end=end)]
 
 
 @app.post("/api/events", status_code=201)

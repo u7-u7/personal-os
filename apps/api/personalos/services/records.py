@@ -32,6 +32,24 @@ def list_records(db: Session, owner_id: str, kind: str, limit: int = 100, offset
                      Record.deleted_at.is_(None)).order_by(Record.created_at.desc()).limit(limit).offset(offset)).all()
 
 
+def list_events(db: Session, owner_id: str, limit: int = 100, offset: int = 0, *,
+                start: datetime | None = None, end: datetime | None = None) -> list[Record]:
+    if start is None and end is None:
+        return list_records(db, owner_id, "event", limit, offset)
+    if start is None or end is None:
+        raise HTTPException(422, "Provide both calendar window start and end")
+    if start.utcoffset() is None or end.utcoffset() is None:
+        raise HTTPException(422, "Calendar window start and end must include a timezone")
+    if start >= end:
+        raise HTTPException(422, "Calendar window start must be before end")
+    # Filter before pagination so older-created events inside the visible window
+    # are not hidden by unrelated recent records. Endpoints are half-open.
+    return list(db.scalars(select(Record).where(
+        Record.owner_id == owner_id, Record.kind == "event", Record.deleted_at.is_(None),
+        Record.start_at < end, Record.end_at > start,
+    ).order_by(Record.start_at, Record.id).limit(limit).offset(offset)).all())
+
+
 def audit(db: Session, owner_id: str, action: str, target_id: str = "", details: dict | None = None,
           status: str = "succeeded") -> Record:
     try:
