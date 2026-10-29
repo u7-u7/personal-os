@@ -1,0 +1,23 @@
+{
+  "qa_event_count": 336,
+  "old_read_count": 100,
+  "old_outside_window": 100,
+  "expected_window_count": 221,
+  "range_count": 221,
+  "tool_count": 221,
+  "exact_ids": true,
+  "query_order": true,
+  "briefing_24h_count": 120,
+  "dashboard_preview_count": 4,
+  "legacy_default_count": 100,
+  "unbounded_without_window_count": 100,
+  "dashboard_status": 200,
+  "dashboard_exact_first_four": true,
+  "google_configured": false,
+  "briefing_24h_exact_ids": true,
+  "soft_deleted_qa_count": 1,
+  "soft_deleted_excluded": true,
+  "all_rows_same_owner": true,
+  "expired_excluded": true,
+  "far_future_excluded": true
+}

@@ -3,7 +3,7 @@ import hashlib
 import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated
 
 import httpx
@@ -628,7 +628,8 @@ async def add_briefing(user: Viewer, db: DB):
 @app.get("/api/dashboard")
 def dashboard(user: Viewer, db: DB):
     tasks = [serialize(r) for r in list_records(db, user.id, "task")]
-    events = [serialize(r) for r in list_records(db, user.id, "event")]
+    start = utcnow()
+    events = [serialize(r) for r in list_events(db, user.id, 4, start=start, end=start + timedelta(days=7))]
     memories = [serialize(r) for r in list_records(db, user.id, "memory")]
     automation_rows = automations(user, db)
     approval_rows = approvals(user, db)

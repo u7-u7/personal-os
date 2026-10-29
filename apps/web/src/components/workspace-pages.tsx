@@ -545,7 +545,13 @@ export function DashboardPage({ user }: { user: User }) {
                 );
               })}
             </div>
-            {data?.events.length ? (
+            {query.isPending ? (
+              <Loading />
+            ) : query.error ? (
+              <p className="field-note">
+                {t("Calendar events could not be loaded.")}
+              </p>
+            ) : data?.events.length ? (
               <div className="agenda-list">
                 {data.events.slice(0, 4).map((event) => (
                   <div className="agenda-item" key={event.id}>
@@ -565,9 +571,11 @@ export function DashboardPage({ user }: { user: User }) {
             ) : (
               <div className="quiet-empty">
                 <CalendarDays size={23} strokeWidth={1.2} />
-                <strong>{t("Your calendar has space.")}</strong>
+                <strong>{t("No local events in the next seven days.")}</strong>
                 <p>
-                  {t("Add an event or connect a calendar to see what’s ahead.")}
+                  {t(
+                    "Add an event to your PersonalOS calendar to plan your day.",
+                  )}
                 </p>
                 <Link href="/calendar">
                   {t("Open calendar")} <ArrowRight size={13} />
@@ -1062,11 +1070,21 @@ function eventOverlapsDay(item: RecordItem, day: Date): boolean {
 
 export function CalendarPage() {
   const { t, locale, timeLabel } = useI18n();
+  const configuration = useAIConfiguration();
+  const integrations = useRecords("integrations");
   const [showGoogle, setShowGoogle] = useState(false);
   const [month, setMonth] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date().toDateString());
   const [edit, setEdit] = useState<RecordItem | "new">();
   const action = useAction();
+  const googleIntegration = integrations.data?.find(
+    (item) => item.kind === "google_calendar" && item.status === "connected",
+  );
+  const connectionPending = configuration.isPending || integrations.isPending;
+  const connectionError = configuration.error || integrations.error;
+  const googleReady =
+    !!googleIntegration && !connectionPending && !connectionError;
+  const googleUnavailable = showGoogle && !googleReady;
   const first = new Date(month.getFullYear(), month.getMonth(), 1);
   const firstCell = new Date(first);
   firstCell.setDate(1 - ((first.getDay() + 6) % 7));
@@ -1103,8 +1121,15 @@ export function CalendarPage() {
     },
   });
   const google = useQuery({
-    queryKey: ["google-events", windowStart, windowEnd],
-    enabled: showGoogle,
+    queryKey: [
+      "google-events",
+      windowStart,
+      windowEnd,
+      googleIntegration?.id,
+      googleIntegration?.version,
+    ],
+    // An optional, disconnected provider is a setup state, not an event error.
+    enabled: showGoogle && googleReady,
     queryFn: ({ signal }) =>
       api<
         {
@@ -1161,15 +1186,9 @@ export function CalendarPage() {
         title={t("Make room in your day.")}
         subtitle={t("A little structure, a little breathing room.")}
       >
-        <Button
-          variant="secondary"
-          onClick={() => {
-            void connect();
-          }}
-          disabled={action.pending}
-        >
-          <Network size={15} /> {t("Connect Google Calendar")}{" "}
-        </Button>
+        <Link href="/integrations" className="text-link">
+          <Network size={15} /> {t("Optional calendar connections")}
+        </Link>
         <Button onClick={() => setEdit("new")}>
           <Plus size={16} /> {t("New event")}{" "}
         </Button>
@@ -1192,212 +1211,263 @@ export function CalendarPage() {
         <span className="small-text">
           {showGoogle
             ? t("Live provider events · OAuth required")
-            : t("Local workspace events")}
+            : t("Local workspace events · No Google account needed")}
         </span>
       </div>
       <Failure
-        error={activeQuery.error}
-        retry={() => void activeQuery.refetch()}
+        error={
+          showGoogle
+            ? connectionError || (googleReady ? google.error : null)
+            : query.error
+        }
+        retry={() => {
+          if (showGoogle && connectionError) {
+            void configuration.refetch();
+            void integrations.refetch();
+          } else void activeQuery.refetch();
+        }}
       />
       <ErrorText text={action.error} />
-      <div className="calendar-layout">
-        <section className="panel calendar-panel">
-          <div className="calendar-controls">
-            <h2>
-              {month.toLocaleDateString(locale, {
-                month: "long",
-                year: "numeric",
-              })}
-            </h2>
-            <div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => selectMonth(new Date())}
-              >
-                {t("Today")}{" "}
-              </Button>
-              <button
-                className="icon-button"
-                aria-label={t("Previous month")}
-                onClick={() =>
-                  selectMonth(
-                    new Date(month.getFullYear(), month.getMonth() - 1, 1),
-                  )
-                }
-              >
-                <ChevronLeft size={19} />
-              </button>
-              <button
-                className="icon-button"
-                aria-label={t("Next month")}
-                onClick={() =>
-                  selectMonth(
-                    new Date(month.getFullYear(), month.getMonth() + 1, 1),
-                  )
-                }
-              >
-                <ChevronRight size={19} />
-              </button>
-            </div>
-          </div>
-          <div className="calendar-weekdays">
-            {Array.from({ length: 7 }, (_, index) => {
-              const day = new Date(2024, 0, index + 1);
-              return (
-                <span key={index}>
-                  {day.toLocaleDateString(locale, { weekday: "short" })}
-                </span>
-              );
-            })}
-          </div>
-          {activeQuery.isPending ? (
+      {googleUnavailable ? (
+        <section className="panel">
+          {connectionPending ? (
             <Loading />
-          ) : activeQuery.error ? (
+          ) : connectionError ? (
             <p className="field-note">
-              {t("Calendar events could not be loaded.")}
+              {t("Calendar connection status could not be loaded.")}
             </p>
-          ) : (
-            <div className="calendar-days">
-              {days.map((day) => {
-                const events = calendarRecords.filter((event) =>
-                  eventOverlapsDay(event, day),
-                );
-                return (
-                  <button
-                    key={day.toISOString()}
-                    className={`calendar-day ${day.getMonth() !== month.getMonth() ? "other-month" : ""} ${selected === day.toDateString() ? "selected-day" : ""} ${day.toDateString() === new Date().toDateString() ? "current-day" : ""}`}
-                    onClick={() => setSelected(day.toDateString())}
-                  >
-                    <span>{day.getDate()}</span>
-                    {events.slice(0, 2).map((e) => (
-                      <small key={e.id}>{e.title}</small>
-                    ))}
-                    {events.length > 2 && (
-                      <em>
-                        {t("+{count} more", { count: events.length - 2 })}
-                      </em>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </section>
-        <section className="panel day-agenda">
-          <span className="eyebrow">{t("YOUR DAY")}</span>
-          <h2>
-            {new Date(selected).toLocaleDateString(locale, {
-              weekday: "long",
-              month: "short",
-              day: "numeric",
-            })}
-          </h2>
-          {activeQuery.isPending ? (
-            <Loading />
-          ) : activeQuery.error ? (
-            <p className="field-note">
-              {t("Calendar events could not be loaded.")}
-            </p>
-          ) : agenda.length ? (
-            agenda.map((item) => (
-              <article className="event-card" key={item.id}>
-                <span className="eyebrow">
-                  {item.start_at &&
-                  /^\d{4}-\d{2}-\d{2}$/.test(item.start_at) ? (
-                    t("All day")
-                  ) : (
-                    <>
-                      {timeLabel(item.start_at)} — {timeLabel(item.end_at)}
-                    </>
-                  )}
-                </span>
-                <h3>{item.title}</h3>
-                <p>{item.content}</p>
-                <Badge status={item.provider || "local"} />
-                {item.provider === "google" && (
-                  <a
-                    className="text-link"
-                    href={item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {t("Open in Google Calendar")} <ArrowUpRight size={13} />
-                  </a>
-                )}
-                <RowActions
-                  onEdit={() => setEdit(item)}
-                  onDelete={() => {
-                    if (
-                      confirm(
-                        t("Delete “{title}”?", { title: item.title || "" }),
-                      )
-                    )
-                      void action.run(async () => {
-                        if (item.provider === "google") {
-                          await api(
-                            `/calendar/google/events/${encodeURIComponent(item.id)}`,
-                            { method: "DELETE" },
-                          );
-                          alert(
-                            t(
-                              "Google Calendar deletion is awaiting your approval in Activity & approvals.",
-                            ),
-                          );
-                        } else await remove("calendar", item, t);
-                      });
-                  }}
-                />
-                {item.provider === "google" && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      if (
-                        confirm(
-                          t(
-                            "Request undo for this external event? A deletion approval will be created.",
-                          ),
-                        )
-                      )
-                        void action.run(async () => {
-                          await api(
-                            `/calendar/google/events/${encodeURIComponent(item.id)}/undo`,
-                            { method: "POST" },
-                          );
-                          alert(
-                            t(
-                              "Undo request is awaiting approval in Activity & approvals.",
-                            ),
-                          );
-                        });
-                    }}
-                  >
-                    <RefreshCw size={12} /> {t("Request undo")}{" "}
-                  </Button>
-                )}
-              </article>
-            ))
           ) : (
             <Empty
               icon={<CalendarDays size={26} />}
-              title={t("A clear stretch of time.")}
+              title={t("Google Calendar is optional.")}
               text={t(
-                "There are no events on this day. Add something intentional.",
+                "Your PersonalOS calendar works on its own. Connect Google only if you want to view and manage an existing Google calendar.",
               )}
               action={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setEdit("new")}
-                >
-                  <Plus size={14} /> {t("Add event")}{" "}
-                </Button>
+                <div className="heading-actions">
+                  <Button
+                    variant="secondary"
+                    onClick={() => setShowGoogle(false)}
+                  >
+                    {t("Use PersonalOS calendar")}
+                  </Button>
+                  {configuration.data?.google_oauth_configured === true ? (
+                    <Button
+                      onClick={() => void connect()}
+                      disabled={action.pending}
+                    >
+                      <Network size={15} /> {t("Connect Google Calendar")}
+                    </Button>
+                  ) : (
+                    <Link href="/integrations" className="text-link">
+                      {t("View optional connections")}
+                    </Link>
+                  )}
+                </div>
               }
             />
           )}
         </section>
-      </div>
+      ) : (
+        <div className="calendar-layout">
+          <section className="panel calendar-panel">
+            <div className="calendar-controls">
+              <h2>
+                {month.toLocaleDateString(locale, {
+                  month: "long",
+                  year: "numeric",
+                })}
+              </h2>
+              <div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => selectMonth(new Date())}
+                >
+                  {t("Today")}{" "}
+                </Button>
+                <button
+                  className="icon-button"
+                  aria-label={t("Previous month")}
+                  onClick={() =>
+                    selectMonth(
+                      new Date(month.getFullYear(), month.getMonth() - 1, 1),
+                    )
+                  }
+                >
+                  <ChevronLeft size={19} />
+                </button>
+                <button
+                  className="icon-button"
+                  aria-label={t("Next month")}
+                  onClick={() =>
+                    selectMonth(
+                      new Date(month.getFullYear(), month.getMonth() + 1, 1),
+                    )
+                  }
+                >
+                  <ChevronRight size={19} />
+                </button>
+              </div>
+            </div>
+            <div className="calendar-weekdays">
+              {Array.from({ length: 7 }, (_, index) => {
+                const day = new Date(2024, 0, index + 1);
+                return (
+                  <span key={index}>
+                    {day.toLocaleDateString(locale, { weekday: "short" })}
+                  </span>
+                );
+              })}
+            </div>
+            {activeQuery.isPending ? (
+              <Loading />
+            ) : activeQuery.error ? (
+              <p className="field-note">
+                {t("Calendar events could not be loaded.")}
+              </p>
+            ) : (
+              <div className="calendar-days">
+                {days.map((day) => {
+                  const events = calendarRecords.filter((event) =>
+                    eventOverlapsDay(event, day),
+                  );
+                  return (
+                    <button
+                      key={day.toISOString()}
+                      className={`calendar-day ${day.getMonth() !== month.getMonth() ? "other-month" : ""} ${selected === day.toDateString() ? "selected-day" : ""} ${day.toDateString() === new Date().toDateString() ? "current-day" : ""}`}
+                      onClick={() => setSelected(day.toDateString())}
+                    >
+                      <span>{day.getDate()}</span>
+                      {events.slice(0, 2).map((e) => (
+                        <small key={e.id}>{e.title}</small>
+                      ))}
+                      {events.length > 2 && (
+                        <em>
+                          {t("+{count} more", { count: events.length - 2 })}
+                        </em>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+          <section className="panel day-agenda">
+            <span className="eyebrow">{t("YOUR DAY")}</span>
+            <h2>
+              {new Date(selected).toLocaleDateString(locale, {
+                weekday: "long",
+                month: "short",
+                day: "numeric",
+              })}
+            </h2>
+            {activeQuery.isPending ? (
+              <Loading />
+            ) : activeQuery.error ? (
+              <p className="field-note">
+                {t("Calendar events could not be loaded.")}
+              </p>
+            ) : agenda.length ? (
+              agenda.map((item) => (
+                <article className="event-card" key={item.id}>
+                  <span className="eyebrow">
+                    {item.start_at &&
+                    /^\d{4}-\d{2}-\d{2}$/.test(item.start_at) ? (
+                      t("All day")
+                    ) : (
+                      <>
+                        {timeLabel(item.start_at)} — {timeLabel(item.end_at)}
+                      </>
+                    )}
+                  </span>
+                  <h3>{item.title}</h3>
+                  <p>{item.content}</p>
+                  <Badge status={item.provider || "local"} />
+                  {item.provider === "google" && (
+                    <a
+                      className="text-link"
+                      href={item.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {t("Open in Google Calendar")} <ArrowUpRight size={13} />
+                    </a>
+                  )}
+                  <RowActions
+                    onEdit={() => setEdit(item)}
+                    onDelete={() => {
+                      if (
+                        confirm(
+                          t("Delete “{title}”?", { title: item.title || "" }),
+                        )
+                      )
+                        void action.run(async () => {
+                          if (item.provider === "google") {
+                            await api(
+                              `/calendar/google/events/${encodeURIComponent(item.id)}`,
+                              { method: "DELETE" },
+                            );
+                            alert(
+                              t(
+                                "Google Calendar deletion is awaiting your approval in Activity & approvals.",
+                              ),
+                            );
+                          } else await remove("calendar", item, t);
+                        });
+                    }}
+                  />
+                  {item.provider === "google" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        if (
+                          confirm(
+                            t(
+                              "Request undo for this external event? A deletion approval will be created.",
+                            ),
+                          )
+                        )
+                          void action.run(async () => {
+                            await api(
+                              `/calendar/google/events/${encodeURIComponent(item.id)}/undo`,
+                              { method: "POST" },
+                            );
+                            alert(
+                              t(
+                                "Undo request is awaiting approval in Activity & approvals.",
+                              ),
+                            );
+                          });
+                      }}
+                    >
+                      <RefreshCw size={12} /> {t("Request undo")}{" "}
+                    </Button>
+                  )}
+                </article>
+              ))
+            ) : (
+              <Empty
+                icon={<CalendarDays size={26} />}
+                title={t("A clear stretch of time.")}
+                text={t(
+                  "There are no events on this day. Add something intentional.",
+                )}
+                action={
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEdit("new")}
+                  >
+                    <Plus size={14} /> {t("Add event")}{" "}
+                  </Button>
+                }
+              />
+            )}
+          </section>
+        </div>
+      )}
       <div className="subtle-tip">
         <ShieldCheck size={15} />{" "}
         {t(

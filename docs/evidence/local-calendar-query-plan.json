@@ -1,0 +1,28 @@
+{
+  "plan": {
+    "node": "Sort",
+    "rows": 221,
+    "shared_hits": 29,
+    "shared_reads": 0,
+    "children": [
+      {
+        "node": "Bitmap Heap Scan",
+        "rows": 221,
+        "shared_hits": 23,
+        "shared_reads": 0,
+        "children": [
+          {
+            "node": "Bitmap Index Scan",
+            "index": "ix_records_owner_events_range",
+            "rows": 221,
+            "shared_hits": 6,
+            "shared_reads": 0,
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "execution_ms": 0.44,
+  "note": "Isolated QA account, development warm-cache sample, no forced planner setting."
+}
