@@ -69,10 +69,12 @@ const resourcePaths: Record<string, string> = {
 function useRecords(kind: string) {
   return useQuery({
     queryKey: [kind],
-    queryFn: ({ signal }) =>
-      ["tasks", "automations"].includes(kind)
-        ? apiAllPages<RecordItem>(resourcePaths[kind], signal)
-        : api<RecordItem[]>(resourcePaths[kind] || `/${kind}`, { signal }),
+    queryFn: ({ signal }) => {
+      const path = resourcePaths[kind] || `/${kind}`;
+      return ["tasks", "automations", "approvals"].includes(kind)
+        ? apiAllPages<RecordItem>(path, signal)
+        : api<RecordItem[]>(path, { signal });
+    },
   });
 }
 function useAction() {
@@ -2086,6 +2088,62 @@ export function IntegrationsPage() {
   );
 }
 
+function MemoryCleanupProgress({
+  cleanup,
+}: {
+  cleanup?: RecordItem["cleanup"];
+}) {
+  const { t } = useI18n();
+  const stageLabels: Record<string, string> = {
+    pending: "Pending cleanup",
+    complete: "Complete",
+    not_required: "Not required",
+    authorization_required: "Awaiting authorization",
+    unverified: "Not verified",
+    unknown: "Status unknown",
+  };
+  const stages = [
+    {
+      label: "Local memory contents",
+      status:
+        cleanup?.canonical_erased === true
+          ? "complete"
+          : cleanup?.canonical_erased === false
+            ? "pending"
+            : "unknown",
+    },
+    { label: "Memory Store", status: cleanup?.store },
+    { label: "Conversation checkpoints", status: cleanup?.checkpoints },
+    { label: "External memory provider", status: cleanup?.provider },
+  ];
+  return (
+    <div role="status">
+      <dl>
+        {stages.map((stage) => (
+          <div key={stage.label}>
+            <dt>{t(stage.label)}</dt>
+            <dd>
+              {t(stageLabels[stage.status || "unknown"] || "Status unknown")}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {cleanup?.provider === "authorization_required" && (
+        <p>
+          {t(
+            "Hy-Memory authorization is required. External memory cleanup has not been verified.",
+          )}
+        </p>
+      )}
+      {cleanup?.last_error_type && (
+        <p>
+          {t("Last cleanup error: {error}", { error: cleanup.last_error_type })}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function ActivityPage() {
   const { t, dateLabel, timeLabel } = useI18n();
   const query = useRecords("activity");
@@ -2098,6 +2156,12 @@ export function ActivityPage() {
   const action = useAction();
   const pending =
     approvals.data?.filter((item) => item.status === "pending") || [];
+  const resumable =
+    approvals.data?.filter(
+      (item) => item.tool === "memory.delete" && item.can_resume === true,
+    ) || [];
+  const selectedQuery =
+    tab === "approvals" ? approvals : tab === "decisions" ? decisions : query;
   return (
     <>
       <PageHeader
@@ -2119,6 +2183,77 @@ export function ActivityPage() {
         </Button>
       </PageHeader>
       <ErrorText text={action.error} />
+      <Failure error={approvals.error} retry={() => void approvals.refetch()} />
+      {!approvals.error && !!resumable.length && (
+        <section className="approvals-section">
+          <div className="section-title">
+            <h2>
+              <ShieldCheck size={18} /> {t("Memory cleanup needs attention")}
+            </h2>
+          </div>
+          {resumable.map((item) => (
+            <article className="panel approval-card" key={item.id}>
+              <div className="approval-card-head">
+                <span className="approval-symbol">
+                  <Brain size={22} />
+                </span>
+                <div>
+                  <h3>{t("Memory deletion cleanup")}</h3>
+                  <p>{t("Approval reference: {id}", { id: item.id })}</p>
+                  <p>
+                    {t(
+                      "Continue the existing authorized deletion. Cleanup is not complete yet.",
+                    )}
+                  </p>
+                </div>
+                <span className="badge badge-deletion_pending">
+                  {t("Cleanup needs attention")}
+                </span>
+              </div>
+              <MemoryCleanupProgress cleanup={item.cleanup} />
+              <div className="approval-buttons">
+                <span>
+                  <LockKeyhole size={13} />{" "}
+                  {t(
+                    "Uses your existing approval and original deletion scope.",
+                  )}
+                </span>
+                <Button
+                  size="sm"
+                  disabled={action.pending}
+                  onClick={() => {
+                    void action.run(async () => {
+                      try {
+                        await api(
+                          `/approvals/${encodeURIComponent(item.id)}/resume`,
+                          {
+                            method: "POST",
+                            body: JSON.stringify({ version: item.version }),
+                          },
+                        );
+                      } catch (error) {
+                        // A failed cleanup can still advance its durable phase/version.
+                        await Promise.all([
+                          approvals.refetch(),
+                          query.refetch(),
+                        ]);
+                        throw error;
+                      }
+                    });
+                  }}
+                >
+                  {action.pending ? (
+                    <LoaderCircle size={14} className="spin" />
+                  ) : (
+                    <RefreshCw size={14} />
+                  )}
+                  {t("Continue cleanup")}
+                </Button>
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
       {!!pending.length && (
         <section className="approvals-section">
           <div className="section-title">
@@ -2218,30 +2353,17 @@ export function ActivityPage() {
         </span>
       </div>
       <Failure
-        error={
-          tab === "approvals"
-            ? approvals.error
-            : tab === "decisions"
-              ? decisions.error
-              : query.error
-        }
+        error={tab === "approvals" ? null : selectedQuery.error}
+        retry={() => void selectedQuery.refetch()}
       />
       <section className="panel">
-        {(
-          tab === "approvals"
-            ? approvals.isPending
-            : tab === "decisions"
-              ? decisions.isPending
-              : query.isPending
-        ) ? (
+        {selectedQuery.isPending ? (
           <Loading />
-        ) : !(
-            tab === "approvals"
-              ? approvals.data
-              : tab === "decisions"
-                ? decisions.data
-                : query.data
-          )?.length ? (
+        ) : selectedQuery.error ? (
+          <p className="field-note">
+            {t("Activity records could not be loaded.")}
+          </p>
+        ) : !selectedQuery.data?.length ? (
           <Empty
             icon={<History size={28} strokeWidth={1.3} />}
             title={t("A clear, quiet record.")}
@@ -2251,12 +2373,7 @@ export function ActivityPage() {
           />
         ) : (
           <div className="activity-list">
-            {(tab === "approvals"
-              ? approvals.data
-              : tab === "decisions"
-                ? decisions.data
-                : query.data
-            )?.map((item) => (
+            {selectedQuery.data?.map((item) => (
               <article key={item.id} className="activity-row">
                 <span className="activity-icon">
                   {tab === "approvals" ? (

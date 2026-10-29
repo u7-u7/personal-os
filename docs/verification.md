@@ -1,5 +1,13 @@
 # PersonalOS verification report
 
+## Interrupted memory deletion recovery · 2026-10-29
+
+Original-approval recovery now persists content-free tombstone stages for Store, all owner checkpoints and optional provider cleanup. Claim/execution/result share the exclusive lease; confirmation writes hold shared leases, and interrupted local cleanup fences new Agent/index writes until recovery. Legacy adoption is exact-version and unambiguous; no new tables/migrations/dependencies/tests.
+
+Real PostgreSQL + official LangGraph SDK failure injection covered before/after Store deletion and failure after105 thread deletions; new processes resumed durable stages. Dedicated processes exited abruptly with73/74 after Store/approval claim; both recovered. 10001 persisted sessions including a soft-deleted one were swept; independent counts in checkpoints/blobs/writes reached0/0/0 and foreign sentinels remained6/6/6. Completed replay preserved later newly written QA state. Actual delayed-aput and lease probes returned409 without claiming/deleting an active confirmation; stale target/approval, ambiguity, expiry, other-tool, cross-owner and strict-body boundaries passed.
+
+Web resumed an already-started expired approval located behind205 newer records; all local stages completed and its recovery card disappeared. Mobile390px had no overflow. A synthetic external-ID metadata fixture truthfully remained202/cleanup_pending/authorization_required with no external call; this does not establish real Hy deletion. Existing backend **51 passed (29.02s)**, full Web/API E2E **1 passed (38.4s)**, Ruff/TypeScript/ESLint passed. Temporary QA services and tabs were stopped. [Design](../.sdd/memory-deletion-recovery/design.md), [report and real evidence](progress/2026-10-29-memory-deletion-recovery.md). Release CI and container evidence are recorded on the current PR.
+
 ## Tasks, memory and automation reliability · 2026-10-29
 
 Fixed incomplete first-page lists, open-task selection after completed history, implicit reconfirmation of edited memories, server-memory metadata handling, and one-time automations silently gaining a daily cron during editing. Added stable pagination and per-automation expandable history. Shared Web reads publish only after all pages succeed; failures do not imply empty lists.

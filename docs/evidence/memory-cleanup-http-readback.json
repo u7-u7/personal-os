@@ -1,0 +1,35 @@
+{
+  "approval_page_lengths": [
+    200,
+    15
+  ],
+  "old_approval_in_second_page": true,
+  "ui_resumed_approval_status": "approved",
+  "ui_resumed_cleanup": {
+    "canonical_erased": true,
+    "state": "complete",
+    "store": "complete",
+    "checkpoints": "complete",
+    "provider": "not_required",
+    "last_error_type": null
+  },
+  "can_resume_after_success": false,
+  "stale_resume_http": 409,
+  "strict_body_http": 422,
+  "completed_replay_http": 200,
+  "provider_cleanup": {
+    "canonical_erased": true,
+    "state": "pending",
+    "store": "complete",
+    "checkpoints": "complete",
+    "provider": "authorization_required",
+    "last_error_type": null
+  },
+  "non_memory_resume_http": 403,
+  "small_checkpoint_tables_after_ui": {
+    "checkpoints": 0,
+    "checkpoint_blobs": 0,
+    "checkpoint_writes": 0
+  },
+  "content_and_tags_erased": true
+}

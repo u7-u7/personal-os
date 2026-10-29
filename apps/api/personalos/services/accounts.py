@@ -9,7 +9,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
-from personalos.models import User
+from personalos.models import Record, User
 
 logger = logging.getLogger(__name__)
 _leases: ContextVar[dict[str, str]] = ContextVar("personalos_account_leases", default={})
@@ -58,6 +58,18 @@ def account_lease(db: Session, owner_id: str, *, exclusive: bool = False):
         connection.commit()
         if active is None:
             raise HTTPException(410, "Account has been deleted; operation refused")
+        if not exclusive:
+            # An interrupted checkpoint sweep resumes by cursor. New Agent or
+            # confirmation writes must not refill an already swept prefix.
+            unfinished = connection.scalar(select(Record.id).where(
+                Record.owner_id == owner_id, Record.kind == "memory", Record.deleted_at.is_not(None),
+                Record.extra["memory_deletion"]["state"].as_string() == "pending",
+                ((Record.extra["memory_deletion"]["store"].as_string() != "complete") |
+                 (Record.extra["memory_deletion"]["checkpoints"].as_string() != "complete")),
+            ).limit(1))
+            connection.commit()
+            if unfinished:
+                raise HTTPException(409, "Memory cleanup is pending. Resume it in Activity before starting AI")
         token = _leases.set({**_leases.get(), owner_id: "exclusive" if exclusive else "shared"})
         yield
     finally:

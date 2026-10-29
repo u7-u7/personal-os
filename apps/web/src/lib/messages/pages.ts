@@ -1,5 +1,30 @@
 /** Chinese translations for fixed workspace UI; user-authored content stays unchanged. */
 export const pageMessages: Record<string, string> = {
+  "Memory cleanup is pending. Resume it in Activity before starting AI":
+    "记忆清理尚未完成，请先在执行记录与审批中继续清理，再使用 AI。",
+  "Approval reference: {id}": "审批编号：{id}",
+  "Memory cleanup needs attention": "记忆清理待完成",
+  "Memory deletion cleanup": "记忆删除清理",
+  "Continue the existing authorized deletion. Cleanup is not complete yet.":
+    "继续执行已授权的删除，清理尚未全部完成。",
+  "Cleanup needs attention": "清理待完成",
+  "Uses your existing approval and original deletion scope.":
+    "沿用原审批，仅继续原删除范围内的清理。",
+  "Continue cleanup": "继续清理",
+  "Local memory contents": "本地记忆内容",
+  "Memory Store": "记忆存储",
+  "Conversation checkpoints": "会话检查点",
+  "External memory provider": "外部记忆服务",
+  "Pending cleanup": "等待清理",
+  Complete: "已完成",
+  "Not required": "无需清理",
+  "Awaiting authorization": "等待授权",
+  "Not verified": "尚未验证",
+  "Status unknown": "状态待核实",
+  "Hy-Memory authorization is required. External memory cleanup has not been verified.":
+    "Hy-Memory 等待授权，外部记忆清理尚未验证。",
+  "Last cleanup error: {error}": "上次清理错误：{error}",
+  "Activity records could not be loaded.": "活动记录未能加载。",
   "Pagination did not advance. Reload and retry.":
     "分页读取未能继续，请重新加载后重试。",
   "Tasks could not be loaded.": "任务未能加载。",

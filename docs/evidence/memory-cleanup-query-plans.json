@@ -1,0 +1,41 @@
+{
+  "checkpoint_page_shape": {
+    "plan": {
+      "node": "Limit",
+      "rows": 100,
+      "hits": 6,
+      "reads": 0,
+      "children": [
+        {
+          "node": "Index Scan",
+          "index": "records_pkey",
+          "rows": 100,
+          "hits": 6,
+          "reads": 0,
+          "children": []
+        }
+      ]
+    },
+    "execution_ms": 0.104
+  },
+  "shared_cleanup_guard_actual_sql": {
+    "plan": {
+      "node": "Limit",
+      "rows": 0,
+      "hits": 16,
+      "reads": 0,
+      "children": [
+        {
+          "node": "Index Scan",
+          "index": "ix_records_owner_kind_status_due",
+          "rows": 0,
+          "hits": 16,
+          "reads": 0,
+          "children": []
+        }
+      ]
+    },
+    "execution_ms": 0.138
+  },
+  "note": "Normal PostgreSQL planner; existing indexes, no JOIN, small QA warm cache, not a production benchmark."
+}

@@ -1,0 +1,13 @@
+{
+  "http": 200,
+  "cleanup_complete": true,
+  "checkpoints_phase": "complete",
+  "case": "Independent new authorized local erasure after completed-replay verification; 10001 persisted sessions including one soft-deleted.",
+  "session_count": 10001,
+  "soft_deleted_sessions": 1,
+  "checkpoint_tables": {
+    "checkpoints": 0,
+    "checkpoint_blobs": 0,
+    "checkpoint_writes": 0
+  }
+}
