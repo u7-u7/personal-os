@@ -1035,9 +1035,33 @@ export function MemoryPage() {
   );
 }
 
+function calendarDate(value: string): Date {
+  // Google all-day dates are local calendar dates, not UTC midnight instants.
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return dateOnly
+    ? new Date(
+        Number(dateOnly[1]),
+        Number(dateOnly[2]) - 1,
+        Number(dateOnly[3]),
+      )
+    : new Date(value);
+}
+
+function eventOverlapsDay(item: RecordItem, day: Date): boolean {
+  if (!item.start_at) return false;
+  const start = calendarDate(item.start_at).getTime();
+  const end = item.end_at ? calendarDate(item.end_at).getTime() : start;
+  const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+  // The end is exclusive, including all-day Google events and midnight ends.
+  return end > start
+    ? start < dayEnd.getTime() && end > dayStart.getTime()
+    : start >= dayStart.getTime() && start < dayEnd.getTime();
+}
+
 export function CalendarPage() {
   const { t, locale, timeLabel } = useI18n();
-  const query = useRecords("calendar");
   const [showGoogle, setShowGoogle] = useState(false);
   const [month, setMonth] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date().toDateString());
@@ -1046,15 +1070,42 @@ export function CalendarPage() {
   const first = new Date(month.getFullYear(), month.getMonth(), 1);
   const firstCell = new Date(first);
   firstCell.setDate(1 - ((first.getDay() + 6) % 7));
+  const afterLastCell = new Date(firstCell);
+  afterLastCell.setDate(afterLastCell.getDate() + 42);
+  const windowStart = firstCell.toISOString();
+  const windowEnd = afterLastCell.toISOString();
   const days = Array.from({ length: 42 }, (_, i) => {
     const d = new Date(firstCell);
     d.setDate(d.getDate() + i);
     return d;
   });
+  const query = useQuery({
+    queryKey: ["calendar", windowStart, windowEnd],
+    enabled: !showGoogle,
+    queryFn: async ({ signal }) => {
+      const records = new Map<string, RecordItem>();
+      const pageSize = 200;
+      let offset = 0;
+      // Publish only the complete window; a later page failure must not make
+      // a partially loaded calendar look like complete availability.
+      while (true) {
+        const params = new URLSearchParams({
+          start: windowStart,
+          end: windowEnd,
+          limit: String(pageSize),
+          offset: String(offset),
+        });
+        const page = await api<RecordItem[]>(`/events?${params}`, { signal });
+        for (const item of page) records.set(item.id, item);
+        if (page.length < pageSize) return Array.from(records.values());
+        offset += page.length;
+      }
+    },
+  });
   const google = useQuery({
-    queryKey: ["google-events", month.toISOString()],
+    queryKey: ["google-events", windowStart, windowEnd],
     enabled: showGoogle,
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       api<
         {
           id: string;
@@ -1065,9 +1116,11 @@ export function CalendarPage() {
           end?: { dateTime?: string; date?: string };
         }[]
       >(
-        `/calendar/google/events?start=${encodeURIComponent(new Date(month.getFullYear(), month.getMonth(), 1).toISOString())}&end=${encodeURIComponent(new Date(month.getFullYear(), month.getMonth() + 1, 1).toISOString())}`,
+        `/calendar/google/events?start=${encodeURIComponent(windowStart)}&end=${encodeURIComponent(windowEnd)}`,
+        { signal },
       ),
   });
+  const activeQuery = showGoogle ? google : query;
   const calendarRecords: RecordItem[] = showGoogle
     ? (google.data || []).map((event) => ({
         id: event.id,
@@ -1082,11 +1135,17 @@ export function CalendarPage() {
       }))
     : query.data || [];
   const agenda = calendarRecords
-    .filter(
-      (item) =>
-        item.start_at && new Date(item.start_at).toDateString() === selected,
-    )
-    .sort((a, b) => (a.start_at || "").localeCompare(b.start_at || ""));
+    .filter((item) => eventOverlapsDay(item, new Date(selected)))
+    .sort(
+      (a, b) =>
+        (a.start_at ? calendarDate(a.start_at).getTime() : 0) -
+          (b.start_at ? calendarDate(b.start_at).getTime() : 0) ||
+        a.id.localeCompare(b.id),
+    );
+  function selectMonth(value: Date) {
+    setMonth(value);
+    setSelected(value.toDateString());
+  }
   async function connect() {
     await action.run(async () => {
       const result = await api<{ authorization_url: string }>(
@@ -1136,7 +1195,10 @@ export function CalendarPage() {
             : t("Local workspace events")}
         </span>
       </div>
-      <Failure error={showGoogle ? google.error : query.error} />
+      <Failure
+        error={activeQuery.error}
+        retry={() => void activeQuery.refetch()}
+      />
       <ErrorText text={action.error} />
       <div className="calendar-layout">
         <section className="panel calendar-panel">
@@ -1151,7 +1213,7 @@ export function CalendarPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setMonth(new Date())}
+                onClick={() => selectMonth(new Date())}
               >
                 {t("Today")}{" "}
               </Button>
@@ -1159,7 +1221,7 @@ export function CalendarPage() {
                 className="icon-button"
                 aria-label={t("Previous month")}
                 onClick={() =>
-                  setMonth(
+                  selectMonth(
                     new Date(month.getFullYear(), month.getMonth() - 1, 1),
                   )
                 }
@@ -1170,7 +1232,7 @@ export function CalendarPage() {
                 className="icon-button"
                 aria-label={t("Next month")}
                 onClick={() =>
-                  setMonth(
+                  selectMonth(
                     new Date(month.getFullYear(), month.getMonth() + 1, 1),
                   )
                 }
@@ -1189,15 +1251,17 @@ export function CalendarPage() {
               );
             })}
           </div>
-          {query.isPending ? (
+          {activeQuery.isPending ? (
             <Loading />
+          ) : activeQuery.error ? (
+            <p className="field-note">
+              {t("Calendar events could not be loaded.")}
+            </p>
           ) : (
             <div className="calendar-days">
               {days.map((day) => {
-                const events = calendarRecords.filter(
-                  (e) =>
-                    e.start_at &&
-                    new Date(e.start_at).toDateString() === day.toDateString(),
+                const events = calendarRecords.filter((event) =>
+                  eventOverlapsDay(event, day),
                 );
                 return (
                   <button
@@ -1229,11 +1293,24 @@ export function CalendarPage() {
               day: "numeric",
             })}
           </h2>
-          {agenda.length ? (
+          {activeQuery.isPending ? (
+            <Loading />
+          ) : activeQuery.error ? (
+            <p className="field-note">
+              {t("Calendar events could not be loaded.")}
+            </p>
+          ) : agenda.length ? (
             agenda.map((item) => (
               <article className="event-card" key={item.id}>
                 <span className="eyebrow">
-                  {timeLabel(item.start_at)} — {timeLabel(item.end_at)}
+                  {item.start_at &&
+                  /^\d{4}-\d{2}-\d{2}$/.test(item.start_at) ? (
+                    t("All day")
+                  ) : (
+                    <>
+                      {timeLabel(item.start_at)} — {timeLabel(item.end_at)}
+                    </>
+                  )}
                 </span>
                 <h3>{item.title}</h3>
                 <p>{item.content}</p>

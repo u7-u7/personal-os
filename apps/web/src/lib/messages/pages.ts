@@ -1,5 +1,17 @@
 /** Chinese translations for fixed workspace UI; user-authored content stays unchanged. */
 export const pageMessages: Record<string, string> = {
+  "Connect Google Calendar with OAuth first":
+    "请先通过 OAuth 连接 Google 日历。",
+  "Google Calendar OAuth is not configured on this server":
+    "服务端尚未配置 Google 日历 OAuth。",
+  "Calendar events could not be loaded.": "日历日程未能加载。",
+  "All day": "全天",
+  "Provide both calendar window start and end":
+    "请同时提供日历时间范围的起止时间。",
+  "Calendar window start and end must include a timezone":
+    "日历时间范围的起止时间必须包含时区。",
+  "Calendar window start must be before end":
+    "日历时间范围的开始时间必须早于结束时间。",
   "Settings changed elsewhere. Your draft is kept; reload the latest settings before saving or testing.":
     "设置已在其他页面更新。当前草稿已保留，请读取最新设置后再保存或检测。",
   "Reload latest settings": "读取最新设置",

@@ -1,0 +1,44 @@
+{
+  "scope": "isolated QA account, 225 matching window events out of 336 seed events; actual application SELECT shape, LIMIT 200",
+  "plan": {
+    "Node Type": "Limit",
+    "Actual Rows": 200,
+    "Actual Loops": 1,
+    "Shared Hit Blocks": 31,
+    "Shared Read Blocks": 0,
+    "Plans": [
+      {
+        "Node Type": "Sort",
+        "Actual Rows": 200,
+        "Actual Loops": 1,
+        "Shared Hit Blocks": 31,
+        "Shared Read Blocks": 0,
+        "Sort Method": "quicksort",
+        "Plans": [
+          {
+            "Node Type": "Bitmap Heap Scan",
+            "Relation Name": "records",
+            "Actual Rows": 225,
+            "Actual Loops": 1,
+            "Rows Removed by Filter": 1,
+            "Shared Hit Blocks": 25,
+            "Shared Read Blocks": 0,
+            "Plans": [
+              {
+                "Node Type": "Bitmap Index Scan",
+                "Index Name": "ix_records_owner_events_range",
+                "Actual Rows": 227,
+                "Actual Loops": 1,
+                "Shared Hit Blocks": 6,
+                "Shared Read Blocks": 0,
+                "Plans": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "planning_ms": 1.441,
+  "execution_ms": 0.485
+}

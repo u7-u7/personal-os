@@ -1,5 +1,15 @@
 # PersonalOS verification report
 
+## Local calendar visible-window completeness · 2026-10-29
+
+PR #7 was verified at its exact green head and merged by explicit user request (merge `93119dd`). The next fix addresses older-created calendar entries disappearing after the account exceeds 100 events. A separate QA account with 336 persisted events reproduced the old behavior: the requested window returned 100 recent out-of-window records and omitted the oldest relevant event.
+
+The candidate filters overlapping owner events before stable pagination, and the Web reads all pages for its 42-day grid. Real API acceptance returned **200+25=225 unique in-window events**, including the old target and a boundary-spanning event, with zero out-of-window records. Timezone-equivalent ranges, six invalid-parameter cases, half-open endpoints, owner separation and approved soft deletion were checked. Actual browser acceptance rendered all 220 events on the dense day, including the last page's event; crossed-midnight and next-month continuation were correct, and errors did not imply empty availability. At 390px, clientWidth and scrollWidth were both 390.
+
+The actual PostgreSQL SELECT used `ix_records_owner_events_range` via Bitmap Index Scan, with 31 shared-hit blocks and no shared reads; the observed 0.485ms is a small warm-cache QA observation, not a production performance claim. Existing PostgreSQL suite **51 passed (6.59s)**; full browser E2E **1 passed (18.2s)**; TypeScript, ESLint and Ruff passed. No test case, table or index was added. [Full evidence](progress/2026-10-29-calendar-window.md).
+
+The prior user-selected Flash embedding acceptance succeeded through API and UI with real 1024-dimension vectors; the standard model's recorded free-tier restriction is a separate result. That prior model acceptance is not presented as a fresh test in this calendar change, and it does not enable Hy indexing. Google OAuth configuration remains absent and has been requested from the user.
+
 ## Real Worker conversation history · 2026-10-29
 
 A real one-time DeepSeek automation succeeded with a 23-character response and attempts=1, but its returned chat session contained **zero messages**. The candidate now saves the user prompt before inference and the assistant response only after a complete stream. It preserves the existing account lease, tool audit and Worker execution contract; no table, migration or test case was added.
