@@ -15,6 +15,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.store.postgres.aio import AsyncPostgresStore
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from personalos.config import get_settings
@@ -24,7 +25,7 @@ from personalos.models import Message, Record, User
 from personalos.services.model import ChatConfiguration, chat_model_parameters
 from personalos.services.memory import MemoryService
 from personalos.services.accounts import account_lease, assert_account_writable
-from personalos.services.records import audit, create_record, ensure_no_conflict, list_events, list_records, serialize
+from personalos.services.records import audit, create_record, ensure_no_conflict, list_events, list_records, query_tasks, serialize
 from personalos.services.tools import request_approval
 
 logger = logging.getLogger(__name__)
@@ -58,9 +59,17 @@ def make_tools(db: Session, owner_id: str, session_id: str, store):
     memory = MemoryService(db, owner_id, store=store)
 
     @tool
-    async def list_tasks() -> str:
-        """Read the user's current tasks and their IDs."""
-        return json.dumps([serialize(r) for r in list_records(db, owner_id, "task", 50)], default=str)
+    async def list_tasks(include_completed: bool = False, limit: Annotated[int, Field(ge=1, le=200)] = 100,
+                         offset: Annotated[int, Field(ge=0)] = 0) -> str:
+        """Read all unfinished tasks and their IDs by default.
+
+        Set include_completed=true for paginated history containing every status.
+        Only history uses limit (1-200) and offset; request successive pages until
+        fewer than limit tasks are returned to read the complete history.
+        """
+        rows = query_tasks(db, owner_id, limit if include_completed else None,
+                           offset if include_completed else 0, open_only=not include_completed)
+        return json.dumps([serialize(r) for r in rows], default=str)
 
     @tool
     async def create_task(title: str, priority: str = "medium", due_at: str | None = None) -> str:
@@ -303,7 +312,7 @@ async def generate_briefing(db: Session, owner_id: str) -> dict:
 async def _generate_briefing(db: Session, owner_id: str) -> dict:
     user = db.get(User, owner_id)
     config = model_config(user)
-    tasks = [serialize(r) for r in list_records(db, owner_id, "task", 50) if r.status not in {"done", "cancelled"}]
+    tasks = [serialize(r) for r in query_tasks(db, owner_id, None, open_only=True)]
     from personalos.services.calendar import list_google_events
     start = utcnow()
     end = start + timedelta(days=1)

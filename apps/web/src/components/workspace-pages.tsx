@@ -43,6 +43,7 @@ import {
 } from "lucide-react";
 import {
   api,
+  apiAllPages,
   ApiError,
   inputDate,
   type RecordItem,
@@ -68,7 +69,10 @@ const resourcePaths: Record<string, string> = {
 function useRecords(kind: string) {
   return useQuery({
     queryKey: [kind],
-    queryFn: () => api<RecordItem[]>(resourcePaths[kind] || `/${kind}`),
+    queryFn: ({ signal }) =>
+      ["tasks", "automations"].includes(kind)
+        ? apiAllPages<RecordItem>(resourcePaths[kind], signal)
+        : api<RecordItem[]>(resourcePaths[kind] || `/${kind}`, { signal }),
   });
 }
 function useAction() {
@@ -422,6 +426,8 @@ export function DashboardPage({ user }: { user: User }) {
             </div>
             {query.isPending ? (
               <Loading />
+            ) : query.error ? (
+              <p className="field-note">{t("Tasks could not be loaded.")}</p>
             ) : !data?.tasks.filter(
                 (t) => !["done", "cancelled"].includes(t.status || ""),
               ).length ? (
@@ -742,15 +748,15 @@ export function TasksPage() {
                   ? t("Completed")
                   : t("All tasks")}
               <span>
-                {
-                  (query.data || []).filter(
-                    (t) =>
-                      value === "all" ||
-                      (value === "done"
-                        ? t.status === "done"
-                        : !["done", "cancelled"].includes(t.status || "")),
-                  ).length
-                }
+                {query.isPending || query.error
+                  ? "—"
+                  : (query.data || []).filter(
+                      (t) =>
+                        value === "all" ||
+                        (value === "done"
+                          ? t.status === "done"
+                          : !["done", "cancelled"].includes(t.status || "")),
+                    ).length}
               </span>
             </button>
           ))}
@@ -775,6 +781,8 @@ export function TasksPage() {
       <section className="panel">
         {query.isPending ? (
           <Loading />
+        ) : query.error ? (
+          <p className="field-note">{t("Tasks could not be loaded.")}</p>
         ) : records.length ? (
           records.map((item) => (
             <TaskRow
@@ -852,9 +860,10 @@ export function MemoryPage() {
   const query = useQuery({
     queryKey: ["memory", debouncedSearch],
     queryFn: ({ signal }) =>
-      api<RecordItem[]>(`/memories?q=${encodeURIComponent(debouncedSearch)}`, {
+      apiAllPages<RecordItem>(
+        `/memories?q=${encodeURIComponent(debouncedSearch)}`,
         signal,
-      }),
+      ),
   });
   const [edit, setEdit] = useState<RecordItem | "new">();
   const action = useAction();
@@ -924,10 +933,12 @@ export function MemoryPage() {
           />
         </div>
       </div>
-      <Failure error={query.error} />
+      <Failure error={query.error} retry={() => void query.refetch()} />
       <ErrorText text={action.error} />
       {query.isPending || search.trim() !== debouncedSearch ? (
         <Loading />
+      ) : query.error ? (
+        <p className="field-note">{t("Memories could not be loaded.")}</p>
       ) : !records.length ? (
         <section className="panel">
           <Empty
@@ -1520,10 +1531,12 @@ export function AutomationsPage() {
           <ShieldCheck size={13} /> {t("Permission aware")}{" "}
         </span>
       </div>
-      <Failure error={query.error} />
+      <Failure error={query.error} retry={() => void query.refetch()} />
       <ErrorText text={action.error} />
       {query.isPending ? (
         <Loading />
+      ) : query.error ? (
+        <p className="field-note">{t("Automations could not be loaded.")}</p>
       ) : !query.data?.length ? (
         <section className="panel">
           <Empty
@@ -1569,9 +1582,7 @@ export function AutomationsPage() {
                       : t("Not scheduled")}
                   </span>
                 </div>
-                <Link href="/activity" className="text-link">
-                  <History size={13} /> {t("View execution history")}{" "}
-                </Link>
+                <AutomationHistory item={item} />
               </div>
               <div className="automation-actions">
                 <button
@@ -1650,6 +1661,70 @@ export function AutomationsPage() {
         />
       )}
     </>
+  );
+}
+function AutomationHistory({ item }: { item: RecordItem }) {
+  const { t, dateLabel, timeLabel } = useI18n();
+  const [open, setOpen] = useState(false);
+  const query = useQuery({
+    queryKey: ["automation-runs", item.id],
+    enabled: open,
+    queryFn: ({ signal }) =>
+      apiAllPages<RecordItem & { attempts: number; scheduled_at: string }>(
+        `/automations/${encodeURIComponent(item.id)}/runs`,
+        signal,
+      ),
+  });
+  return (
+    <details
+      className="briefing-history-item"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>
+        <History size={13} /> {t("View execution history")}
+      </summary>
+      {open && (
+        <>
+          <Failure error={query.error} retry={() => void query.refetch()} />
+          {query.isPending ? (
+            <Loading />
+          ) : query.error ? (
+            <p className="field-note">
+              {t("Execution history could not be loaded.")}
+            </p>
+          ) : !query.data?.length ? (
+            <p className="field-note">{t("No executions yet.")}</p>
+          ) : (
+            query.data.map((run) => (
+              <article className="activity-row" key={run.id}>
+                <History size={16} />
+                <div>
+                  <h3>
+                    {dateLabel(run.scheduled_at)} ·{" "}
+                    {timeLabel(run.scheduled_at)}
+                  </h3>
+                  <p>{t("Attempts: {count}", { count: run.attempts })}</p>
+                  {run.error && <p>{run.error}</p>}
+                  <details>
+                    <summary>{t("Execution details")}</summary>
+                    <pre>
+                      {JSON.stringify(
+                        { id: run.id, result: run.result },
+                        null,
+                        2,
+                      )}
+                    </pre>
+                  </details>
+                </div>
+                <div>
+                  <Badge status={run.status} />
+                </div>
+              </article>
+            ))
+          )}
+        </>
+      )}
+    </details>
   );
 }
 export function IntegrationsPage() {
@@ -3064,9 +3139,9 @@ function ResourceEditor({
     staleTime: 0,
     enabled: kind === "memory" && !!debouncedMemoryTopic,
     queryFn: ({ signal }) =>
-      api<RecordItem[]>(
-        `/memories?topic=${encodeURIComponent(debouncedMemoryTopic)}&limit=200`,
-        { signal },
+      apiAllPages<RecordItem>(
+        `/memories?topic=${encodeURIComponent(debouncedMemoryTopic)}`,
+        signal,
       ),
   });
   const conflictingMemories = (memoryCandidates.data || []).filter(
@@ -3336,6 +3411,8 @@ function ResourceEditor({
                   {memoryCandidates.isPending ||
                   memoryTopic.trim() !== debouncedMemoryTopic ? (
                     <Loading />
+                  ) : memoryCandidates.error ? (
+                    <p>{t("Memory conflicts could not be loaded.")}</p>
                   ) : conflictingMemories.length ? (
                     <>
                       <p>
@@ -3477,7 +3554,7 @@ function ResourceEditor({
                   {t("Schedule (cron)")}{" "}
                   <input
                     name="cron"
-                    defaultValue={item?.cron || "0 8 * * *"}
+                    defaultValue={item ? (item.cron ?? "") : "0 8 * * *"}
                     placeholder="0 8 * * *"
                   />
                 </label>

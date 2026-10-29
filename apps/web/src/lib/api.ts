@@ -16,7 +16,7 @@ export interface RecordItem {
   source_id?: string;
   source_type?: string;
   prompt?: string;
-  cron?: string;
+  cron?: string | null;
   timezone?: string;
   next_run_at?: string;
   kind?: string;
@@ -133,6 +133,32 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return response.status === 204
     ? (undefined as T)
     : (response.json() as Promise<T>);
+}
+export async function apiAllPages<T extends { id: string }>(
+  path: string,
+  signal?: AbortSignal,
+): Promise<T[]> {
+  const queryStart = path.indexOf("?");
+  const pathname = queryStart < 0 ? path : path.slice(0, queryStart);
+  const params = new URLSearchParams(
+    queryStart < 0 ? "" : path.slice(queryStart + 1),
+  );
+  const records = new Map<string, T>();
+  const pageSize = 200;
+  let offset = 0;
+  while (true) {
+    params.set("limit", String(pageSize));
+    params.set("offset", String(offset));
+    const page = await api<T[]>(`${pathname}?${params}`, { signal });
+    const previousSize = records.size;
+    for (const item of page) records.set(item.id, item);
+    // Publish only a complete result; a later page failure must not look empty.
+    if (page.length < pageSize) return Array.from(records.values());
+    // Older servers may ignore offset. Fail explicitly instead of looping forever.
+    if (records.size === previousSize)
+      throw new Error("Pagination did not advance. Reload and retry.");
+    offset += page.length;
+  }
 }
 export function dateLabel(
   value?: string | null,

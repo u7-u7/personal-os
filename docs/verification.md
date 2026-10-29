@@ -1,5 +1,15 @@
 # PersonalOS verification report
 
+## Tasks, memory and automation reliability · 2026-10-29
+
+Fixed incomplete first-page lists, open-task selection after completed history, implicit reconfirmation of edited memories, server-memory metadata handling, and one-time automations silently gaining a daily cron during editing. Added stable pagination and per-automation expandable history. Shared Web reads publish only after all pages succeed; failures do not imply empty lists.
+
+Owner-isolated real PostgreSQL/API/UI acceptance covered 265 tasks (60 open), 228 initial memories, 206 schedules and 225 explicitly seeded history metadata rows. The actual task tool returned all 60 open tasks; dashboard showed five. Browser task completion/reopening, old-goal filtering, second-page conflict selection/explicit confirmation, one-time title edit and 225-run display passed. Real LangGraph Postgres Store confirmation/readback and approved deletion passed; an index-marker retry used CAS and preserved other server metadata. Foreign-owner reads/updates, stale409 and invalid422 checks passed.
+
+Two independent Worker processes on a temporary isolated schema left one one-time occurrence, attempts1 and schedule completed. Inference intentionally failed because that QA account had no model configuration; this proves scheduling, not model success. A failure-only local proxy forwarded actual first-page data and returned503 on page two; all four list/history views hid partial data and false empty states, and retry recovered tasks. Mobile expanded history/long results had no horizontal overflow at390px.
+
+Existing backend **51 passed (9.51s)**; existing real Web/API E2E **1 passed (20.5s)**; Ruff/TypeScript/ESLint passed. No tests/tables/migrations/dependencies were added. Temporary services, schema and tabs were cleaned up. No model retry this round; Hy/Jev authorization and partial memory-purge failure recovery remain explicit gates. [Full report and evidence](progress/2026-10-29-workspace-modules.md).
+
 ## Built-in calendar priority and AI event windows · 2026-10-29
 
 The user chose the built-in calendar; Google remains optional and is no longer an authorization prerequisite for the current local candidate. CalendarPage shows disconnected Google as neutral setup, makes no provider-event call, and returns directly to the local calendar. Real connection/query errors remain errors; dashboard loading/failure no longer implies an empty calendar.

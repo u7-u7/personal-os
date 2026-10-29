@@ -54,6 +54,7 @@ class MemoryService:
         audit(self.db, self.owner_id, "memory.confirmed", memory_id)
         self.db.commit()
         if self.store:
+            saved_version, saved_extra = row.version, dict(row.extra)
             try:
                 await self.store.aput((self.owner_id, "memories"), row.id, {"content": row.content, "source": row.data.get("source")})
             except Exception as exc:
@@ -61,6 +62,12 @@ class MemoryService:
                 audit(self.db, self.owner_id, "memory.index_failed", memory_id, {"error_type": type(exc).__name__}, status="failed")
                 self.db.commit()
                 raise HTTPException(503, "Memory saved locally; long-term index update is pending") from exc
+            # Resolve only this Store marker. CAS fences concurrent edits and
+            # account erasure after the async write; Hy indexes remain separate.
+            if saved_extra.get("index_state") == "pending":
+                row = cas_update(self.db, Record, self.owner_id, memory_id, saved_version,
+                                 {"extra": {key: value for key, value in saved_extra.items() if key != "index_state"}})
+                self.db.commit()
         return row
 
     async def delete(self, memory_id: str, version: int) -> dict:

@@ -1,0 +1,22 @@
+{
+  "source_ui_edit_remained_once": true,
+  "independent_worker_runs": [
+    {
+      "process_exit": 0,
+      "automation_status": "completed",
+      "cron": null,
+      "executions": 1,
+      "run_status": "failed",
+      "attempts": 1
+    },
+    {
+      "process_exit": 0,
+      "automation_status": "completed",
+      "cron": null,
+      "executions": 1,
+      "run_status": "failed",
+      "attempts": 1
+    }
+  ],
+  "note": "Isolated temporary PostgreSQL schema. No model credentials. Expected failed inference proves scheduling count, not model success."
+}
