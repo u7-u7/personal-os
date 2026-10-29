@@ -1,0 +1,208 @@
+{
+  "dashboard_tasks": {
+    "plan": {
+      "node": "Limit",
+      "rows": 5,
+      "removed_by_filter": 0,
+      "shared_hits": 19,
+      "shared_reads": 0,
+      "children": [
+        {
+          "node": "Sort",
+          "rows": 5,
+          "removed_by_filter": 0,
+          "shared_hits": 19,
+          "shared_reads": 0,
+          "children": [
+            {
+              "node": "Bitmap Heap Scan",
+              "rows": 60,
+              "removed_by_filter": 206,
+              "shared_hits": 19,
+              "shared_reads": 0,
+              "children": [
+                {
+                  "node": "Bitmap Index Scan",
+                  "index": "ix_records_owner_kind_status_due",
+                  "rows": 268,
+                  "removed_by_filter": 0,
+                  "shared_hits": 2,
+                  "shared_reads": 0,
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "execution_ms": 0.126
+  },
+  "all_open_tasks": {
+    "plan": {
+      "node": "Sort",
+      "rows": 60,
+      "removed_by_filter": 0,
+      "shared_hits": 19,
+      "shared_reads": 0,
+      "children": [
+        {
+          "node": "Bitmap Heap Scan",
+          "rows": 60,
+          "removed_by_filter": 206,
+          "shared_hits": 19,
+          "shared_reads": 0,
+          "children": [
+            {
+              "node": "Bitmap Index Scan",
+              "index": "ix_records_owner_kind_status_due",
+              "rows": 268,
+              "removed_by_filter": 0,
+              "shared_hits": 2,
+              "shared_reads": 0,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    "execution_ms": 0.108
+  },
+  "tasks_page_2": {
+    "plan": {
+      "node": "Limit",
+      "rows": 65,
+      "removed_by_filter": 0,
+      "shared_hits": 19,
+      "shared_reads": 0,
+      "children": [
+        {
+          "node": "Sort",
+          "rows": 265,
+          "removed_by_filter": 0,
+          "shared_hits": 19,
+          "shared_reads": 0,
+          "children": [
+            {
+              "node": "Bitmap Heap Scan",
+              "rows": 265,
+              "removed_by_filter": 1,
+              "shared_hits": 19,
+              "shared_reads": 0,
+              "children": [
+                {
+                  "node": "Bitmap Index Scan",
+                  "index": "ix_records_owner_kind_status_due",
+                  "rows": 268,
+                  "removed_by_filter": 0,
+                  "shared_hits": 2,
+                  "shared_reads": 0,
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "execution_ms": 0.117
+  },
+  "memory_topic": {
+    "plan": {
+      "node": "Limit",
+      "rows": 27,
+      "removed_by_filter": 0,
+      "shared_hits": 15,
+      "shared_reads": 0,
+      "children": [
+        {
+          "node": "Sort",
+          "rows": 227,
+          "removed_by_filter": 0,
+          "shared_hits": 15,
+          "shared_reads": 0,
+          "children": [
+            {
+              "node": "Bitmap Heap Scan",
+              "rows": 227,
+              "removed_by_filter": 1,
+              "shared_hits": 15,
+              "shared_reads": 0,
+              "children": [
+                {
+                  "node": "Bitmap Index Scan",
+                  "index": "ix_records_owner_kind_status_due",
+                  "rows": 237,
+                  "removed_by_filter": 0,
+                  "shared_hits": 2,
+                  "shared_reads": 0,
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "execution_ms": 0.233
+  },
+  "automations_page_2": {
+    "plan": {
+      "node": "Limit",
+      "rows": 6,
+      "removed_by_filter": 0,
+      "shared_hits": 8,
+      "shared_reads": 0,
+      "children": [
+        {
+          "node": "Sort",
+          "rows": 206,
+          "removed_by_filter": 0,
+          "shared_hits": 8,
+          "shared_reads": 0,
+          "children": [
+            {
+              "node": "Seq Scan",
+              "rows": 206,
+              "removed_by_filter": 22,
+              "shared_hits": 8,
+              "shared_reads": 0,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    "execution_ms": 0.15
+  },
+  "runs_page_2": {
+    "plan": {
+      "node": "Limit",
+      "rows": 25,
+      "removed_by_filter": 0,
+      "shared_hits": 10,
+      "shared_reads": 0,
+      "children": [
+        {
+          "node": "Sort",
+          "rows": 225,
+          "removed_by_filter": 0,
+          "shared_hits": 10,
+          "shared_reads": 0,
+          "children": [
+            {
+              "node": "Seq Scan",
+              "rows": 225,
+              "removed_by_filter": 19,
+              "shared_hits": 10,
+              "shared_reads": 0,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    "execution_ms": 0.339
+  },
+  "note": "Actual application SELECTs; normal planner, owner-isolated small QA data and warm cache. Not a production benchmark; no JOIN introduced."
+}

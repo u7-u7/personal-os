@@ -32,6 +32,18 @@ def list_records(db: Session, owner_id: str, kind: str, limit: int = 100, offset
                      Record.deleted_at.is_(None)).order_by(Record.created_at.desc()).limit(limit).offset(offset)).all()
 
 
+def query_tasks(db: Session, owner_id: str, limit: int | None = 100, offset: int = 0, *,
+                open_only: bool = False) -> list[Record]:
+    query = select(Record).where(Record.owner_id == owner_id, Record.kind == "task", Record.deleted_at.is_(None))
+    if open_only:
+        # Completed history must not push older unfinished work outside a page.
+        query = query.where(Record.status.not_in(["done", "cancelled"]))
+    elif limit is None:
+        # Unbounded reads are reserved for explicitly selected unfinished work.
+        limit = 100
+    return list(db.scalars(query.order_by(Record.created_at.desc(), Record.id.desc()).limit(limit).offset(offset)).all())
+
+
 def list_events(db: Session, owner_id: str, limit: int | None = 100, offset: int = 0, *,
                 start: datetime | None = None, end: datetime | None = None) -> list[Record]:
     if start is None and end is None:

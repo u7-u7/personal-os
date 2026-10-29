@@ -1,0 +1,30 @@
+{
+  "tasks": {
+    "open": 60,
+    "total": 265,
+    "completed": 103,
+    "completeReopenPassed": true,
+    "secondPageErrorRows": 0,
+    "falseEmpty": 0,
+    "retryRecovered": true
+  },
+  "memory": {
+    "cardsAfterApprovedDelete": 227,
+    "oldGoalVisible": true,
+    "olderConflictSelectable": true,
+    "explicitReplacementConfirmed": true,
+    "errorCards": 0,
+    "falseEmpty": 0
+  },
+  "automations": {
+    "cards": 206,
+    "runs": 225,
+    "onceCronPreserved": true,
+    "mobileWidth": 390,
+    "mobileScrollWidth": 390,
+    "errorCards": 0,
+    "falseEmpty": 0,
+    "errorRunRows": 0,
+    "falseNoExecutions": 0
+  }
+}

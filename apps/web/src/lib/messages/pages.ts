@@ -1,5 +1,15 @@
 /** Chinese translations for fixed workspace UI; user-authored content stays unchanged. */
 export const pageMessages: Record<string, string> = {
+  "Pagination did not advance. Reload and retry.":
+    "分页读取未能继续，请重新加载后重试。",
+  "Tasks could not be loaded.": "任务未能加载。",
+  "Memories could not be loaded.": "记忆未能加载。",
+  "Memory conflicts could not be loaded.": "记忆冲突未能加载。",
+  "Automations could not be loaded.": "自动化任务未能加载。",
+  "Execution history could not be loaded.": "执行历史未能加载。",
+  "No executions yet.": "尚无执行记录。",
+  "Attempts: {count}": "尝试次数：{count}",
+  "Execution details": "执行详情",
   "Connect Google Calendar with OAuth first":
     "请先通过 OAuth 连接 Google 日历。",
   "Google Calendar OAuth is not configured on this server":

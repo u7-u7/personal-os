@@ -23,13 +23,13 @@ from personalos.schemas import (ApprovalInput, AutomationInput, ChatInput, Crede
 from personalos.security import (COOKIE_NAME, current_user, decrypt_config, encrypt_config,
                                 new_session, password_hasher)
 from personalos.services.agent import durable_graph_resources, generate_briefing, initialize_graph_storage, model_config, stream_agent
-from personalos.services.automations import create_automation
+from personalos.services.automations import create_automation, list_automations, list_automation_runs
 from personalos.services.accounts import account_lease, assert_account_writable
 from personalos.services.calendar import ensure_google_no_conflict, get_google_event, google_connection, list_google_events, oauth_complete, oauth_start
 from personalos.services.memory import MemoryService
 from personalos.services.network import validate_public_url
 from personalos.services.records import (audit, cas_update, create_record, ensure_no_conflict,
-                                        list_events, list_records, owned, patch_record, serialize)
+                                        list_events, list_records, owned, patch_record, query_tasks, serialize)
 from personalos.services.tools import execute_approval, mcp_tools, request_approval
 
 logger = logging.getLogger(__name__)
@@ -146,7 +146,7 @@ def logout(response: Response, request: Request, user: Viewer, db: DB):
 
 @app.get("/api/tasks")
 def tasks(user: Viewer, db: DB, limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0)):
-    return [serialize(r) for r in list_records(db, user.id, "task", limit, offset)]
+    return [serialize(r) for r in query_tasks(db, user.id, limit, offset)]
 
 
 @app.post("/api/tasks", status_code=201)
@@ -196,7 +196,7 @@ def memories(user: Viewer, db: DB, q: str = Query("", max_length=200), topic: st
         # The owner/kind/deleted index bounds IO before JSON fact-key filtering.
         # Apply the topic predicate before pagination so older conflicts remain selectable.
         query = query.where(Record.extra["fact_key"].as_string() == topic)
-    rows = db.scalars(query.order_by(Record.created_at.desc()).limit(limit).offset(offset)).all()
+    rows = db.scalars(query.order_by(Record.created_at.desc(), Record.id.desc()).limit(limit).offset(offset)).all()
     return [serialize(row) for row in rows]
 
 
@@ -218,12 +218,20 @@ async def update_memory(item_id: str, user: Viewer, db: DB, payload: dict = Body
     version = require_version(payload)
     if row.kind != "memory":
         raise HTTPException(404, "Memory not found")
-    values = MemoryInput.model_validate({**serialize(row), **payload}).model_dump()
-    confirm = values.pop("status") == "confirmed"
+    editable_keys = {"fact_key", "supersedes", "tags"}
+    # Stored provider/index metadata is server-owned. It must neither break
+    # input validation on retry nor be erased by a normal user edit.
+    current = {**serialize(row), "status": "pending",
+               "extra": {key: value for key, value in row.extra.items() if key in editable_keys}}
+    values = MemoryInput.model_validate({**current, **payload}).model_dump()
+    confirm = payload.get("status") == "confirmed"
     if any(key in payload for key in {"content", "category", "source", "extra"}):
         values["status"] = "pending"
+        values["extra"] = {**{key: value for key, value in row.extra.items() if key not in editable_keys}, **values["extra"]}
         row = patch_record(db, user.id, "memory", item_id, version, values)
         version = row.version
+    elif payload.get("status") == "pending":
+        row = patch_record(db, user.id, "memory", item_id, version, {"status": "pending"})
     if confirm:
         async with durable_graph_resources() as (_, store):
             row = await MemoryService(db, user.id, store=store).confirm(item_id, version)
@@ -286,9 +294,8 @@ async def google_events(user: Viewer, db: DB, start: str, end: str):
 
 
 @app.get("/api/automations")
-def automations(user: Viewer, db: DB):
-    return [serialize(row) for row in db.scalars(select(Automation).where(Automation.owner_id == user.id,
-             Automation.deleted_at.is_(None)).order_by(Automation.created_at.desc()).limit(200)).all()]
+def automations(user: Viewer, db: DB, limit: int = Query(200, ge=1, le=200), offset: int = Query(0, ge=0)):
+    return [serialize(row) for row in list_automations(db, user.id, limit, offset)]
 
 
 @app.post("/api/automations", status_code=201)
@@ -328,10 +335,8 @@ def retry_automation(item_id: str, user: Viewer, db: DB, payload: dict = Body(..
 
 
 @app.get("/api/automations/{item_id}/runs")
-def automation_runs(item_id: str, user: Viewer, db: DB):
-    owned(db, Automation, user.id, item_id)
-    return [serialize(row) for row in db.scalars(select(Execution).where(Execution.owner_id == user.id,
-             Execution.automation_id == item_id).order_by(Execution.created_at.desc()).limit(100)).all()]
+def automation_runs(item_id: str, user: Viewer, db: DB, limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0)):
+    return [serialize(row) for row in list_automation_runs(db, user.id, item_id, limit, offset)]
 
 
 @app.get("/api/integrations")
@@ -629,11 +634,11 @@ async def add_briefing(user: Viewer, db: DB):
 
 @app.get("/api/dashboard")
 def dashboard(user: Viewer, db: DB):
-    tasks = [serialize(r) for r in list_records(db, user.id, "task")]
+    tasks = [serialize(r) for r in query_tasks(db, user.id, 5, open_only=True)]
     start = utcnow()
     events = [serialize(r) for r in list_events(db, user.id, 4, start=start, end=start + timedelta(days=7))]
     memories = [serialize(r) for r in list_records(db, user.id, "memory")]
-    automation_rows = automations(user, db)
+    automation_rows = [serialize(row) for row in list_automations(db, user.id)]
     approval_rows = approvals(user, db)
     briefing_rows = list_records(db, user.id, "briefing", 1)
     task_count = db.scalar(select(func.count()).select_from(Record).where(Record.owner_id == user.id, Record.kind == "task", Record.deleted_at.is_(None), Record.status.not_in(["done", "cancelled"])))
