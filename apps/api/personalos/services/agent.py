@@ -19,10 +19,10 @@ from sqlalchemy.orm import Session
 from personalos.config import get_settings
 from personalos.db import utcnow
 from personalos.integrations.decision import JevDecisionProvider, LLMDecisionProvider, RuleDecisionProvider
-from personalos.models import Record, User
+from personalos.models import Message, Record, User
 from personalos.services.model import ChatConfiguration, chat_model_parameters
 from personalos.services.memory import MemoryService
-from personalos.services.accounts import account_lease
+from personalos.services.accounts import account_lease, assert_account_writable
 from personalos.services.records import audit, create_record, ensure_no_conflict, list_records, serialize
 from personalos.services.tools import request_approval
 
@@ -270,13 +270,25 @@ async def _run_automation(db: Session, owner_id: str, prompt: str) -> dict:
         raise ValueError("Automation account is unavailable")
     model_config(user)
     session = create_record(db, owner_id, "chat_session", {"title": "Automation execution"})
+    session_id = session.id
+    # Persist the request before model/tool work so a failed or interrupted run
+    # remains inspectable without retrying effects that may already be committed.
+    assert_account_writable(db, owner_id)
+    db.add(Message(owner_id=owner_id, session_id=session_id, role="user", content=prompt))
+    db.commit()
     content, tools = [], []
-    async for event in stream_agent(db, user, prompt, session.id):
+    async for event in stream_agent(db, user, prompt, session_id):
         if event["type"] == "token":
             content.append(event["content"])
         if event["type"] == "tool":
             tools.append(event)
-    return {"content": "".join(content), "tools": tools, "session_id": session.id}
+    response = "".join(content)
+    # Only a fully completed stream becomes an assistant message. Partial output
+    # must not masquerade as a successful reply when the Worker reports failure.
+    assert_account_writable(db, owner_id)
+    db.add(Message(owner_id=owner_id, session_id=session_id, role="assistant", content=response))
+    db.commit()
+    return {"content": response, "tools": tools, "session_id": session_id}
 
 
 async def generate_briefing(db: Session, owner_id: str) -> dict:
