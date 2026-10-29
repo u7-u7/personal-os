@@ -1,0 +1,9 @@
+{
+  "fixture_type": "rolled-back connection metadata, not a Google authorization",
+  "mcp_rows": 101,
+  "legacy_list_omits_connection": true,
+  "snapshot_finds_exact_connection": true,
+  "settings_snapshot_matches": true,
+  "settings_contains_no_token": true,
+  "rollback_connection_absent": true
+}

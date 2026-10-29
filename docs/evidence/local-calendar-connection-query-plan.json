@@ -1,0 +1,28 @@
+{
+  "plan": {
+    "node": "Limit",
+    "rows": 1,
+    "shared_hits": 3,
+    "shared_reads": 0,
+    "children": [
+      {
+        "node": "Sort",
+        "rows": 1,
+        "shared_hits": 3,
+        "shared_reads": 0,
+        "children": [
+          {
+            "node": "Index Scan",
+            "index": "ix_records_owner_kind_status_due",
+            "rows": 1,
+            "shared_hits": 3,
+            "shared_reads": 0,
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "execution_ms": 0.027,
+  "fixture_type": "Rolled-back metadata rows; no Google authorization or request."
+}

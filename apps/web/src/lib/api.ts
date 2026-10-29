@@ -60,6 +60,7 @@ export interface Settings {
   embedding_index_status?: string;
   memory_enabled?: boolean;
   timezone?: string;
+  google_calendar_connection?: { id: string; version: number } | null;
   [key: string]: unknown;
 }
 export interface ChatConnectionCheck {

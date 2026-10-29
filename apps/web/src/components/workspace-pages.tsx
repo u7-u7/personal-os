@@ -1071,17 +1071,14 @@ function eventOverlapsDay(item: RecordItem, day: Date): boolean {
 export function CalendarPage() {
   const { t, locale, timeLabel } = useI18n();
   const configuration = useAIConfiguration();
-  const integrations = useRecords("integrations");
   const [showGoogle, setShowGoogle] = useState(false);
   const [month, setMonth] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date().toDateString());
   const [edit, setEdit] = useState<RecordItem | "new">();
   const action = useAction();
-  const googleIntegration = integrations.data?.find(
-    (item) => item.kind === "google_calendar" && item.status === "connected",
-  );
-  const connectionPending = configuration.isPending || integrations.isPending;
-  const connectionError = configuration.error || integrations.error;
+  const googleIntegration = configuration.data?.google_calendar_connection;
+  const connectionPending = configuration.isPending;
+  const connectionError = configuration.error;
   const googleReady =
     !!googleIntegration && !connectionPending && !connectionError;
   const googleUnavailable = showGoogle && !googleReady;
@@ -1223,7 +1220,6 @@ export function CalendarPage() {
         retry={() => {
           if (showGoogle && connectionError) {
             void configuration.refetch();
-            void integrations.refetch();
           } else void activeQuery.refetch();
         }}
       />
