@@ -5,6 +5,7 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import timedelta
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
@@ -23,7 +24,7 @@ from personalos.models import Message, Record, User
 from personalos.services.model import ChatConfiguration, chat_model_parameters
 from personalos.services.memory import MemoryService
 from personalos.services.accounts import account_lease, assert_account_writable
-from personalos.services.records import audit, create_record, ensure_no_conflict, list_records, serialize
+from personalos.services.records import audit, create_record, ensure_no_conflict, list_events, list_records, serialize
 from personalos.services.tools import request_approval
 
 logger = logging.getLogger(__name__)
@@ -83,12 +84,15 @@ def make_tools(db: Session, owner_id: str, session_id: str, store):
     @tool
     async def list_calendar_events() -> str:
         """Read local upcoming events and connected Google Calendar events for the next seven days."""
-        from datetime import timedelta
         from personalos.services.calendar import list_google_events
-        events = [serialize(r) for r in list_records(db, owner_id, "event", 100) if r.end_at and r.end_at >= utcnow()]
+        start = utcnow()
+        end = start + timedelta(days=7)
+        # Bound by occurrence time, not creation order, so older plans remain
+        # visible even after many unrelated events have been added.
+        events = [serialize(r) for r in list_events(db, owner_id, None, start=start, end=end)]
         connected = [r for r in list_records(db, owner_id, "integration") if r.data.get("kind") == "google_calendar" and r.status == "connected"]
         if connected:
-            events.extend(await list_google_events(db, owner_id, utcnow().isoformat(), (utcnow() + timedelta(days=7)).isoformat()))
+            events.extend(await list_google_events(db, owner_id, start.isoformat(), end.isoformat()))
         return json.dumps(events, default=str, ensure_ascii=False)
 
     @tool
@@ -300,12 +304,13 @@ async def _generate_briefing(db: Session, owner_id: str) -> dict:
     user = db.get(User, owner_id)
     config = model_config(user)
     tasks = [serialize(r) for r in list_records(db, owner_id, "task", 50) if r.status not in {"done", "cancelled"}]
-    from datetime import timedelta
     from personalos.services.calendar import list_google_events
-    events = [serialize(r) for r in list_records(db, owner_id, "event", 100) if r.end_at and r.end_at >= utcnow()]
+    start = utcnow()
+    end = start + timedelta(days=1)
+    events = [serialize(r) for r in list_events(db, owner_id, None, start=start, end=end)]
     connected = [r for r in list_records(db, owner_id, "integration") if r.data.get("kind") == "google_calendar" and r.status == "connected"]
     if connected:
-        google_events = await list_google_events(db, owner_id, utcnow().isoformat(), (utcnow() + timedelta(days=1)).isoformat())
+        google_events = await list_google_events(db, owner_id, start.isoformat(), end.isoformat())
         events.extend({"id": item["id"], "title": item.get("summary", ""), "start": item.get("start"), "end": item.get("end"), "provider": "google"} for item in google_events)
     memories = await MemoryService(db, owner_id).recall("daily goals preferences", 20)
     async with chat_model_parameters(config) as prepared:

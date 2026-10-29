@@ -5,6 +5,18 @@ export const pageMessages: Record<string, string> = {
   "Google Calendar OAuth is not configured on this server":
     "服务端尚未配置 Google 日历 OAuth。",
   "Calendar events could not be loaded.": "日历日程未能加载。",
+  "Calendar connection status could not be loaded.": "日历连接状态未能加载。",
+  "No local events in the next seven days.": "未来七天暂无本地日程。",
+  "Add an event to your PersonalOS calendar to plan your day.":
+    "在 PersonalOS 自带日历中添加日程，安排你的一天。",
+  "Optional calendar connections": "可选日历连接",
+  "Local workspace events · No Google account needed":
+    "工作台本地日程 · 无需 Google 账号",
+  "Google Calendar is optional.": "Google 日历是可选连接。",
+  "Your PersonalOS calendar works on its own. Connect Google only if you want to view and manage an existing Google calendar.":
+    "PersonalOS 自带日历可以独立使用。如果你已有 Google 日历，想在这里查看和管理，再连接即可。",
+  "Use PersonalOS calendar": "使用 PersonalOS 自带日历",
+  "View optional connections": "查看可选连接",
   "All day": "全天",
   "Provide both calendar window start and end":
     "请同时提供日历时间范围的起止时间。",

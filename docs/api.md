@@ -7,7 +7,7 @@ Registration/login passwords use the same 8–256 character constraint. Existing
 | Endpoint | Behavior |
 |---|---|
 | `POST /api/auth/register`, `/login`, `/logout`; `GET /api/auth/me` | Account/session lifecycle; Redis-backed authentication rate limit |
-| `GET /api/dashboard` | Actual account tasks, events, pending approvals, schedules and latest briefing |
+| `GET /api/dashboard` | Actual account tasks, earliest four overlapping local events in the next seven days, pending approvals, schedules and latest briefing |
 | `GET/POST /api/tasks`; `PATCH/DELETE /api/tasks/{id}` | Task history, priorities, deadlines, optimistic updates; deletion approval |
 | `GET/POST /api/memories`; `PATCH/DELETE /api/memories/{id}` | Search/proposal/confirmation/edit/source/deletion approval |
 | `GET/POST /api/events`; `PATCH/DELETE /api/events/{id}` | Local calendar and interval conflict detection; external write approval |
@@ -43,6 +43,8 @@ An unavailable model or missing server OAuth configuration returns 503. Provider
 Windowed results include non-deleted events owned by the current user where `event.start_at < end` and `event.end_at > start`, ordered by `start_at,id` before pagination. The page requests batches of 200 until a short page, publishes only a fully loaded window and forwards AbortSignal on navigation. This removes the previous truncation before month filtering. Offset pagination has stable ordering but does not promise a multi-request snapshot while another client edits events.
 
 The grid and daily agenda display overlapping events on every covered day, with an exclusive end boundary. Date-only Google values are interpreted as local calendar dates. Switching months moves the selected day into the target month, and an unloaded or failed source is never labeled as an empty day. Google still requires OAuth and its server-side pagination is a separate pending item; this local fix is not evidence of a live Google integration.
+
+Settings include a read-only `google_calendar_connection` (`{id,version}` or `null`), derived from the current owner/provider/connection state before any list pagination. No provider token is returned. The built-in calendar requires no Google configuration. Unconnected Google views are optional setup states and do not request provider events; failed connection-status reads and actual provider failures remain explicit errors. The Agent's `list_calendar_events` reads the full overlapping local seven-day window; briefings read the full rolling 24-hour window. Both share their exact timestamps with an already connected Google source. These internal reads have no row-count truncation, while the public `/events` page-size contract is unchanged. Very dense windows remain subject to model context limits and existing deadlines, rather than returning a fabricated or silently shortened briefing.
 
 ## Additional safety endpoints and fields
 

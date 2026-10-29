@@ -39,7 +39,7 @@ npm run dev --prefix apps/web
 
 `.env` is server-only and ignored by Git and Docker build contexts. Never place API keys in `NEXT_PUBLIC_*` or browser storage. The Web proxies `/api` to FastAPI. Container builds set `API_URL=http://api:8000`; local development defaults to `http://127.0.0.1:8000`.
 
-## Models and Google Calendar
+## Models and calendars
 
 After registering, follow the two-step AI setup card on the Dashboard or open **Settings**. Fill the compatible Base URL and API key, retrieve available models, then select or enter a model ID. Test the current chat and separate Qwen embedding fields before saving; diagnostics never save the draft. A saved configuration is not proof of connectivity. Chat and briefings require chat configuration; missing embedding configuration does not block ordinary chat or manual tasks/calendar management. Optional Hy-Memory remains separately gated.
 
@@ -53,7 +53,9 @@ DeepSeek can serve the generative chat, task parsing, briefing and memory extrac
 
 Embedding also accepts the official Beijing public Base URL `https://dashscope.aliyuncs.com/compatible-mode/v1`. Workspace URLs remain recommended, but the provider explicitly retains the existing endpoint for compatibility. Use a Beijing API key with access to the selected model; accepting an endpoint is not a successful model call. URLs are never silently rewritten and changing endpoints still requires re-entering the key. See [official Embedding compatibility](https://help.aliyun.com/zh/model-studio/embedding-interfaces-compatible-with-openai) and [regional endpoints](https://help.aliyun.com/zh/model-studio/regions/).
 
-Google Calendar uses OAuth, not account passwords. Create a Google OAuth Web application, enable Calendar API, configure the exact redirect URI and add authorized test users if applicable. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, restart API and connect through Integrations. External writes require approval. Without those credentials the UI reports unavailable instead of pretending to be connected.
+The built-in PersonalOS calendar works without a Google account, OAuth credentials or a model API key. Local events support viewing, editing, conflict checks and approved deletion. The dashboard previews the earliest four overlapping events in the next seven days; the Agent reads the next seven days, while briefings use a rolling 24-hour window. Queries filter occurrence times before reading results, so recently created unrelated events do not hide older plans.
+
+Google Calendar is an optional connection. This user's current development and acceptance path uses the built-in calendar; Google authorization is not required. To enable Google later, create a Google OAuth Web application, enable Calendar API, configure the exact redirect URI and add authorized test users if applicable. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, restart API and connect through Integrations. External writes require approval. A disconnected provider shows an optional setup explanation; real connection or event-query failures remain errors. Google pagination and OAuth lifecycle review remain tracked follow-ups; no real Google acceptance is claimed.
 
 ## Memory and tools
 

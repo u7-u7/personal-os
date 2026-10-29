@@ -3,7 +3,7 @@ import hashlib
 import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated
 
 import httpx
@@ -25,7 +25,7 @@ from personalos.security import (COOKIE_NAME, current_user, decrypt_config, encr
 from personalos.services.agent import durable_graph_resources, generate_briefing, initialize_graph_storage, model_config, stream_agent
 from personalos.services.automations import create_automation
 from personalos.services.accounts import account_lease, assert_account_writable
-from personalos.services.calendar import ensure_google_no_conflict, get_google_event, list_google_events, oauth_complete, oauth_start
+from personalos.services.calendar import ensure_google_no_conflict, get_google_event, google_connection, list_google_events, oauth_complete, oauth_start
 from personalos.services.memory import MemoryService
 from personalos.services.network import validate_public_url
 from personalos.services.records import (audit, cas_update, create_record, ensure_no_conflict,
@@ -446,13 +446,14 @@ def activity(user: Viewer, db: DB):
 
 
 @app.get("/api/settings")
-def settings(user: Viewer):
+def settings(user: Viewer, db: DB):
     from personalos.services.embedding import EmbeddingConfiguration
     from personalos.services.model import ChatConfiguration
 
     config = get_settings()
     chat = ChatConfiguration.for_user(user)
     embedding = EmbeddingConfiguration.for_user(user)
+    connection = google_connection(db, user.id)
     return {**chat.public_settings(), **embedding.public_settings(),
             "ai_setup_complete": chat.configured and embedding.configured,
             "missing_configuration_fields": {"chat": chat.missing_fields,
@@ -461,6 +462,7 @@ def settings(user: Viewer):
             "memory_enabled": user.preferences.get("memory_enabled", True), "theme": user.preferences.get("theme", "system"),
             "timezone": user.preferences.get("timezone", "Asia/Shanghai"), "version": user.version,
             "google_oauth_configured": bool(config.google_client_id and config.google_client_secret),
+            "google_calendar_connection": {"id": connection.id, "version": connection.version} if connection else None,
             "hy_memory_configured": False, "hy_memory_status": "awaiting_authorization", "jev_configured": bool(config.typesafe_api_key),
             "fast_model": user.preferences.get("fast_model", ""), "reasoning_model": user.preferences.get("reasoning_model", ""),
             "decision_provider": user.preferences.get("decision_provider", config.decision_provider)}
@@ -504,7 +506,7 @@ async def update_settings(payload: SettingsInput, user: Viewer, db: DB):
     audit(db, user.id, "settings.updated")
     db.commit()
     db.refresh(user)
-    return settings(user)
+    return settings(user, db)
 
 
 async def run_provider_diagnostic(payload, user: User, db: Session, *, action: str, probe, embedding: bool = False):
@@ -628,7 +630,8 @@ async def add_briefing(user: Viewer, db: DB):
 @app.get("/api/dashboard")
 def dashboard(user: Viewer, db: DB):
     tasks = [serialize(r) for r in list_records(db, user.id, "task")]
-    events = [serialize(r) for r in list_records(db, user.id, "event")]
+    start = utcnow()
+    events = [serialize(r) for r in list_events(db, user.id, 4, start=start, end=start + timedelta(days=7))]
     memories = [serialize(r) for r in list_records(db, user.id, "memory")]
     automation_rows = automations(user, db)
     approval_rows = approvals(user, db)

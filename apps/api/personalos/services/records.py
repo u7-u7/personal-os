@@ -32,10 +32,10 @@ def list_records(db: Session, owner_id: str, kind: str, limit: int = 100, offset
                      Record.deleted_at.is_(None)).order_by(Record.created_at.desc()).limit(limit).offset(offset)).all()
 
 
-def list_events(db: Session, owner_id: str, limit: int = 100, offset: int = 0, *,
+def list_events(db: Session, owner_id: str, limit: int | None = 100, offset: int = 0, *,
                 start: datetime | None = None, end: datetime | None = None) -> list[Record]:
     if start is None and end is None:
-        return list_records(db, owner_id, "event", limit, offset)
+        return list_records(db, owner_id, "event", 100 if limit is None else limit, offset)
     if start is None or end is None:
         raise HTTPException(422, "Provide both calendar window start and end")
     if start.utcoffset() is None or end.utcoffset() is None:

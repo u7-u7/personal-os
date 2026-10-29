@@ -22,7 +22,7 @@ Exercise: contrast recall suppression with erasing conversation history and exte
 
 ## 4. Calendar and daily briefing
 
-Create local calendar events and provoke an overlapping interval. Configure a Google OAuth application, complete consent, query real events and request an external write. Inspect the frozen approval before accepting it. Generate a briefing and inspect which task/calendar IDs were used.
+Create local calendar events and provoke an overlapping interval. The built-in calendar requires no Google account. Generate a briefing and inspect which task/calendar IDs were used. Briefings use the next 24 hours; the calendar tool reads the next seven days, including older-created plans. Optional Google extension: configure an OAuth application, complete consent, query real events and request an external write. Inspect the frozen approval before accepting it. This extension remains unverified without real consent and is not required for the local-calendar course path.
 
 Exercise: replay the same approval version. Expected: rejected replay, no second external write. Do not use a real calendar without explicit user authorization.
 

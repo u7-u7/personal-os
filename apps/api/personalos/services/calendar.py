@@ -63,10 +63,18 @@ async def oauth_complete(db: Session, owner_id: str, state: str, code: str) -> N
     db.commit()
 
 
+def google_connection(db: Session, owner_id: str) -> Record | None:
+    # A paginated integration list cannot establish whether this provider is
+    # connected; filter by owner/provider before taking the connection snapshot.
+    return db.scalar(select(Record).where(
+        Record.owner_id == owner_id, Record.kind == "integration",
+        Record.status == "connected", Record.deleted_at.is_(None),
+        Record.data["kind"].as_string() == "google_calendar",
+    ).order_by(Record.created_at.desc(), Record.id).limit(1))
+
+
 async def calendar_token(db: Session, owner_id: str, *, commit: bool = True) -> str:
-    integrations = db.scalars(select(Record).where(Record.owner_id == owner_id, Record.kind == "integration",
-                             Record.status == "connected", Record.deleted_at.is_(None))).all()
-    row = next((r for r in integrations if r.data.get("kind") == "google_calendar"), None)
+    row = google_connection(db, owner_id)
     if not row:
         raise HTTPException(409, "Connect Google Calendar with OAuth first")
     tokens = decrypt_config(row.extra.get("encrypted_tokens"))
