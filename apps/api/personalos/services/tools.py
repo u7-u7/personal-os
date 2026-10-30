@@ -86,6 +86,9 @@ async def _execute_approval(db: Session, owner_id: str, row: Record) -> dict:
         return await delete_account(db, owner_id, row.id)
     if tool == "mcp.call":
         return await mcp_call(db, owner_id, args["integration_id"], args["tool"], args["arguments"], expected_version=args["integration_version"], expected_fingerprint=args["server_fingerprint"])
+    if tool == "code_hosting.write":
+        from personalos.services.hosting import execute_code_hosting_write
+        return await execute_code_hosting_write(db, owner_id, args)
     if tool == "memory.delete":
         from personalos.services.agent import durable_graph_resources
         async with durable_graph_resources() as (saver, store):
