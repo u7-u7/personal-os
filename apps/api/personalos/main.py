@@ -2,16 +2,18 @@
 import hashlib
 import json
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Annotated, Literal
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -368,7 +370,9 @@ def integrations(user: Viewer, db: DB):
 
 def safe_integration(row):
     item = serialize(row)
-    item["extra"] = {key: val for key, val in item.get("extra", {}).items() if key != "encrypted_tokens"}
+    item["extra"] = {key: val for key, val in (item.get("extra") or {}).items() if key != "encrypted_tokens"}
+    # serialize() flattens the data column, so the issued token envelope also lands at the top level.
+    item.pop("encrypted_tokens", None)
     return item
 
 
@@ -415,6 +419,185 @@ def call_tool(item_id: str, user: Viewer, db: DB, payload: dict = Body(...)):
     approval = request_approval(db, user.id, "mcp.call", {"integration_id": item_id, "tool": tool,
                                 "arguments": payload.get("arguments", {})}, f"Call MCP tool: {tool}")
     return {"approval_required": True, "approval": serialize(approval)}
+
+
+class OAuthStartInput(BaseModel):
+    """Optional scope override; an empty list means the read-only default."""
+
+    scope: list[str] | None = Field(default=None, max_length=50)
+
+    @field_validator("scope")
+    @classmethod
+    def trim_scope(cls, value):
+        if value is None:
+            return None
+        scopes = [item.strip() for item in value if item.strip()]
+        if any(len(item) > 120 for item in scopes):
+            raise ValueError("OAuth scopes must be at most 120 characters")
+        return scopes or None
+
+
+# A connection must never gain write access implicitly: the default request is read-only.
+READ_ONLY_OAUTH_SCOPES = ("read:user", "public_repo")
+OAUTH_STATE_MINUTES = 10
+OAUTH_TOKEN_KEYS = ("access_token", "token_type", "refresh_token", "expires_at", "scope")
+
+
+def oauth_scope(scopes_supported: list[str], requested: list[str] | None) -> list[str]:
+    """Explicit scopes win; otherwise only the read-only scopes the provider actually offers.
+
+    An empty result sends no scope parameter, leaving the provider to apply its own minimal
+    default. A provider that offers nothing read-only must not fall through to its first scope,
+    because that is how a connection would silently gain write access.
+    """
+    if requested:
+        return requested
+    supported = {item for item in scopes_supported if item}
+    return [item for item in READ_ONLY_OAUTH_SCOPES if item in supported]
+
+
+def oauth_browser_redirect(**params: str) -> RedirectResponse:
+    """Return the browser to the web settings page with short status codes and nothing else."""
+    response = RedirectResponse(url=f"{get_settings().app_url.rstrip('/')}/settings?{urlencode(params)}",
+                                status_code=302)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def oauth_state_matches(stored: object, provided: str) -> bool:
+    """Constant-time compare; a value we never issued cannot match."""
+    return (isinstance(stored, str) and len(stored) == len(provided) and stored.isascii()
+            and provided.isascii() and secrets.compare_digest(stored, provided))
+
+
+def pending_oauth_state(db: Session, state: str) -> Record | None:
+    """The one unexpired pending authorization whose state matches.
+
+    The provider redirect carries no session cookie, so the ten-minute pending window bounds
+    this read; an expired or spent row can never be claimed again.
+    """
+    if not state or not state.isascii():
+        return None
+    rows = db.scalars(select(Record).where(Record.kind == "oauth_state", Record.status == "pending",
+                       Record.due_at > utcnow(), Record.deleted_at.is_(None))).all()
+    return next((row for row in rows if oauth_state_matches(row.data.get("state"), state)), None)
+
+
+def claim_oauth_state(db: Session, row: Record) -> bool:
+    """Spend the state once: the claiming statement drops the encrypted verifier payload."""
+    data = {key: value for key, value in row.data.items() if key != "encrypted"}
+    result = db.execute(update(Record).where(Record.id == row.id, Record.kind == "oauth_state",
+                         Record.status == "pending", Record.version == row.version,
+                         Record.due_at > utcnow())
+                         .values(status="used", version=row.version + 1, updated_at=utcnow(), data=data))
+    if result.rowcount != 1:
+        db.rollback()
+        return False
+    db.commit()
+    return True
+
+
+def store_oauth_tokens(db: Session, owner_id: str, integration: Record, tokens: dict,
+                       scopes: list[str]) -> None:
+    """Encrypt the token set onto the integration and audit the granted scope only."""
+    stored = {key: tokens.get(key) for key in OAUTH_TOKEN_KEYS}
+    integration.data = {**integration.data, "encrypted_tokens": encrypt_config(stored)}
+    integration.version += 1
+    integration.updated_at = utcnow()
+    audit(db, owner_id, "oauth.linked", integration.id, {"scope": stored["scope"] or " ".join(scopes)})
+    db.commit()
+
+
+def oauth_failure_reason(exc: Exception) -> str:
+    """Short reason code for the redirect; tokens, verifiers and remote text stay out of it."""
+    from personalos.services.oauth import OAuthError
+
+    if isinstance(exc, OAuthError):
+        return "provider_failed"
+    if isinstance(exc, HTTPException):
+        return "storage"
+    if isinstance(exc, (TimeoutError, httpx.TransportError)):
+        return "network"
+    return "failed"
+
+
+@app.post("/api/integrations/{item_id}/oauth/start")
+async def start_oauth(item_id: str, user: Viewer, db: DB, payload: OAuthStartInput | None = None):
+    from personalos.services.oauth import (OAuthError, authorization_url, discover, new_pkce, new_state,
+                                           register_client)
+
+    row = owned(db, Record, user.id, item_id)
+    if row.kind != "integration" or row.data.get("kind") != "mcp":
+        raise HTTPException(404, "MCP connection not found")
+    if row.data.get("trusted") is not True:
+        raise HTTPException(403, "Explicitly trust this MCP connection before authorizing it")
+    if not row.data.get("url"):
+        raise HTTPException(409, "MCP connection has no server URL to authorize")
+    assert_account_writable(db, user.id)
+    settings = get_settings()
+    redirect_uri = settings.oauth_callback_url
+    try:
+        discovery = await discover(row.data["url"])
+        if settings.oauth_client_id:
+            client_id, client_secret = settings.oauth_client_id, settings.oauth_client_secret or None
+        else:
+            registered = await register_client(discovery, redirect_uri=redirect_uri)
+            client_id, client_secret = registered["client_id"], registered.get("client_secret")
+        scopes = oauth_scope(discovery.scopes_supported, payload.scope if payload else None)
+    except OAuthError as exc:
+        if exc.error == "dcr_unsupported":
+            raise HTTPException(409, "This provider cannot register itself dynamically. Register an OAuth "
+                                     "app and set OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET") from exc
+        logger.warning("oauth_start_failed integration_id=%s error_code=%s", item_id, exc.error)
+        raise HTTPException(502, f"OAuth metadata discovery failed ({exc.error})") from exc
+    state = new_state()
+    verifier, challenge = new_pkce()
+    authorization = authorization_url(discovery, client_id=client_id, redirect_uri=redirect_uri, scope=scopes,
+                                      state=state, challenge=challenge)
+    # The verifier and the client secret exist at rest only inside this ciphertext.
+    pending = encrypt_config({"verifier": verifier, "scopes": scopes, "client_id": client_id,
+                              "client_secret": client_secret})
+    db.add(Record(owner_id=user.id, kind="oauth_state", status="pending",
+                  title=f"Authorize {row.title or 'MCP connection'}"[:500],
+                  due_at=utcnow() + timedelta(minutes=OAUTH_STATE_MINUTES),
+                  data={"integration_id": item_id, "state": state, "encrypted": pending,
+                        "redirect_uri": redirect_uri, "created_at": utcnow().isoformat()}))
+    db.commit()
+    return {"authorization_url": authorization, "state": state, "scope": scopes}
+
+
+@app.get("/api/oauth/callback")
+async def oauth_callback(db: DB, code: str = Query(default=""), state: str = Query(default=""),
+                         error: str = Query(default="")):
+    from personalos.services.oauth import discover, exchange_code
+
+    pending = pending_oauth_state(db, state)
+    if pending is None:
+        return oauth_browser_redirect(oauth="invalid_state")
+    owner_id, data = pending.owner_id, dict(pending.data)
+    if not claim_oauth_state(db, pending):
+        return oauth_browser_redirect(oauth="invalid_state")
+    try:
+        if error or not code:
+            return oauth_browser_redirect(oauth="failed", reason="denied")
+        payload = decrypt_config(data.get("encrypted"))
+        integration = db.scalar(select(Record).where(Record.id == data.get("integration_id"),
+                                Record.owner_id == owner_id, Record.kind == "integration",
+                                Record.deleted_at.is_(None)))
+        linked = integration.data if integration is not None else {}
+        if integration is None or linked.get("trusted") is not True or not linked.get("url"):
+            return oauth_browser_redirect(oauth="failed", reason="revoked")
+        discovery = await discover(linked["url"])
+        tokens = await exchange_code(discovery, client_id=payload["client_id"],
+                                    client_secret=payload.get("client_secret"), code=code,
+                                    redirect_uri=data.get("redirect_uri") or "", verifier=payload["verifier"])
+        store_oauth_tokens(db, owner_id, integration, tokens, payload.get("scopes") or [])
+    except Exception as exc:
+        db.rollback()
+        reason = oauth_failure_reason(exc)
+        logger.warning("oauth_callback_failed reason=%s error_type=%s", reason, type(exc).__name__)
+        return oauth_browser_redirect(oauth="failed", reason=reason)
+    return oauth_browser_redirect(oauth="ok")
 
 
 @app.get("/api/approvals")
