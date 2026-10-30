@@ -39,19 +39,77 @@ class MemoryInput(BaseModel):
         return value
 
 
+class CalendarCreateInput(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    color: str = Field(default="blue", max_length=20)
+
+
+class CalendarPatchInput(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    color: str | None = Field(default=None, max_length=20)
+    position: int | None = Field(default=None, ge=0)
+    visible: bool | None = None
+
+
+class EventOverrideInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    content: str | None = Field(default=None, max_length=10000)
+    location: str | None = Field(default=None, max_length=500)
+    all_day: bool | None = None
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+
+
 class EventInput(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     start_at: datetime
     end_at: datetime
     content: str = Field(default="", max_length=10000)
-    provider: Literal["local", "google"] = "local"
+    # Only local events exist; the field stays so stored rows keep a uniform shape.
+    provider: Literal["local"] = "local"
+    calendar_id: str | None = Field(default=None, max_length=36)
+    location: str = Field(default="", max_length=500)
+    all_day: bool = False
+    timezone: str = Field(default="Asia/Shanghai", max_length=100)
+    rrule: str | None = Field(default=None, max_length=500)
+    exdates: list[datetime] = Field(default_factory=list, max_length=500)
+    overrides: dict[str, EventOverrideInput] = Field(default_factory=dict, max_length=500)
+    reminders: list[int] = Field(default_factory=list, max_length=5)
     extra: dict = Field(default_factory=dict)
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_event_timezone(cls, value):
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError("Unknown IANA timezone") from exc
+        return value
+
+    @field_validator("rrule")
+    @classmethod
+    def validate_rrule(cls, value):
+        from personalos.services.recurrence import RecurrenceError, parse_rrule, rule_text
+
+        try:
+            parts = parse_rrule(value)
+        except RecurrenceError as exc:
+            raise ValueError(str(exc)) from exc
+        return rule_text(parts) or None
+
+    @field_validator("reminders")
+    @classmethod
+    def validate_reminders(cls, value):
+        if any(not isinstance(item, int) or isinstance(item, bool) or item < 0 or item > 10080 for item in value):
+            raise ValueError("Reminders are lead times in minutes between 0 and 10080")
+        return sorted(set(value))
 
     @model_validator(mode="after")
     def valid_range(self):
         if not self.start_at.tzinfo or not self.end_at.tzinfo:
             raise ValueError("Event timestamps must include a timezone")
-        if self.end_at <= self.start_at:
+        if self.end_at < self.start_at or (self.end_at == self.start_at and not self.all_day):
             raise ValueError("end_at must be after start_at")
         return self
 
@@ -144,7 +202,7 @@ class SettingsInput(ChatConfigurationInput, EmbeddingConfigurationInput):
 
 class IntegrationInput(BaseModel):
     title: str = Field(min_length=1, max_length=200)
-    kind: Literal["mcp", "google_calendar"]
+    kind: Literal["mcp"]
     url: str = Field(default="", max_length=2000)
     trusted: bool = False
     permissions: list[str] = Field(default_factory=list, max_length=100)

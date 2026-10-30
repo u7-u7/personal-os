@@ -7,13 +7,14 @@
 DES-01 (REQ-A/B/J)：FastAPI 分层 route/service/repository/provider，LangGraph 编排、持久化 Checkpointer/Store；MemoryService 和 DecisionProvider 可独立替换。使用成熟框架，避免自建 Agent 循环。规则替代只提供规则确实可判断的结果，真实 LLM 缺失返回依赖未配置。
 DES-02 (REQ-C/D/E/F/H/I)：PostgreSQL 业务事实源，SQLAlchemy/Pydantic，owner_id 索引隔离。复用审计/审批/版本控制；没有可复用旧表，按领域创建必要表。查询无 JOIN、以主键和 owner 过滤；列表限额、分页。Redis 用于速率限制/辅助，不作为唯一任务事实源。
 DES-03 (REQ-F/H)：Worker 数据库原子 claim/租约，唯一运行键；超时回收。只执行白名单处理器，外部写操作先创建 approval，审批绑定参数，未知外部结果不自动重复。
-DES-04 (REQ-D/G/H)：第三方日历 OAuth、加密 token；MCP 官方 client、HTTPS host allowlist、显式信任、逐工具权限与审批。拒绝任意 shell 和内网 SSRF。撤销能力按工具实际支持。
+DES-04 (REQ-D/G/H)：本地日历复用 records 表，以 kind=calendar/event/notification 三类行承载多日历、重复例外与站内提醒，不新增业务表；重复展开与工作域判断在服务层完成，颜色走服务端白名单。MCP 官方 client、HTTPS host allowlist、显式信任、逐工具权限与审批。拒绝任意 shell 和内网 SSRF。撤销能力按工具实际支持。第三方日历 OAuth 已于 2026-10-31 按用户决策移除，不再保留该路径。
 DES-05 (REQ-L)：Next.js 工作台，深色墨绿/米白设计、安静的编辑式排版；左侧导航+工作区+上下文面板。TanStack Query 实时 API，同源反向代理，不含假统计/预置任务。
 DES-06 (REQ-K/NFR)：Compose postgres/redis/api/worker/web，Alembic 迁移、锁定依赖、healthcheck、CI；feature 分支和可审核 PR。敏感配置 .env 不进 Git。失败回退上一 commit，不破坏数据；数据库破坏性迁移需备份。
 
 ## 数据与接口契约
 统一 /api；Cookie HttpOnly 会话。POST /auth/register /auth/login /auth/logout，GET /auth/me。
-GET/POST /tasks /memories /events /automations /integrations；PATCH/DELETE /{resource}/{id} 带 version。列表返回数组；对象含 id/created_at/updated_at/version/extra/deleted_at。Memory: content/category/status/source；Task: title/status/priority/due_at；Event: title/start_at/end_at；Automation: title/prompt/cron/timezone/status/next_run_at。
+GET/POST /tasks /memories /events /automations /integrations；PATCH/DELETE /{resource}/{id} 带 version。列表返回数组；对象含 id/created_at/updated_at/version/extra/deleted_at。Memory: content/category/status/source；Task: title/status/priority/due_at；Event: title/start_at/end_at/calendar_id/all_day/location/rrule/exdates/overrides/reminders；Automation: title/prompt/cron/timezone/status/next_run_at。
+日历专用：GET/POST /calendars，PATCH/DELETE /calendars/{id}（默认日历禁删，非空日历删除需 move_to）；GET /events 按窗口在服务端展开重复实例并返回 occurrence_start/recurrence_id/is_override；PATCH/DELETE /events/{id} 带 scope=this|following|all。提醒：GET /notifications、POST /notifications/{id}/read、POST /notifications/read-all。
 GET /dashboard；GET/POST /briefings；GET /activity /approvals；POST /approvals/{id}/resolve；GET/PATCH /settings；GET /export。
 POST /chat/stream {message,session_id?,model?} 返回 SSE，每个 data 为 JSON，type=status|token|tool|error|done，token 带 content，done 带 session_id；GET /chat/sessions、GET /chat/sessions/{id}/messages。
 外部服务失败使用明确 HTTP 状态和错误，不以 HTTP 200 成功语义掩盖。

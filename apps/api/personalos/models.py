@@ -50,6 +50,8 @@ class Record(Fields, Base):
         Index("ix_records_owner_kind_deleted_created", "owner_id", "kind", "deleted_at", "created_at"),
         Index("ix_records_owner_kind_status_due", "owner_id", "kind", "status", "due_at"),
         Index("ix_records_owner_events_range", "owner_id", "kind", "start_at", "end_at"),
+        # The worker scans upcoming event rows across owners for due reminders.
+        Index("ix_records_kind_deleted_start", "kind", "deleted_at", "start_at"),
     )
 
 

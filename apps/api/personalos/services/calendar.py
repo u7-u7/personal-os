@@ -1,221 +1,447 @@
-import hashlib
-import secrets
-from datetime import timedelta
-from urllib.parse import urlencode
+"""Local calendar service: calendars, events and recurrence scopes.
 
-import httpx
+One Record table stays the only business table: a calendar is a ``calendar`` row and
+an event is an ``event`` row whose ``data`` carries recurrence, reminders and the
+per-occurrence overrides produced by scoped edits.
+"""
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
 from fastapi import HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from personalos.config import get_settings
 from personalos.db import utcnow
 from personalos.models import Record
-from personalos.security import decrypt_config, encrypt_config
-from personalos.services.records import audit
+from personalos.schemas import EventInput
+from personalos.services import notifications, recurrence
+from personalos.services.records import (audit, create_record, ensure_no_conflict, list_records, serialize)
 
-GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events"
-
-
-def oauth_start(db: Session, owner_id: str) -> str:
-    config = get_settings()
-    if not config.google_client_id or not config.google_client_secret:
-        raise HTTPException(503, "Google Calendar OAuth is not configured on this server")
-    state = secrets.token_urlsafe(32)
-    db.add(Record(owner_id=owner_id, kind="oauth_state", title=hashlib.sha256(state.encode()).hexdigest(),
-                  due_at=utcnow() + timedelta(minutes=10)))
-    db.commit()
-    return "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
-        "client_id": config.google_client_id, "redirect_uri": config.google_redirect_uri,
-        "response_type": "code", "scope": GOOGLE_SCOPES, "state": state,
-        "access_type": "offline", "prompt": "consent"})
+PALETTE = ("blue", "green", "orange", "red", "purple", "yellow", "pink", "teal", "brown", "gray")
+DEFAULT_CALENDAR_NAME = "个人"
+DEFAULT_TIMEZONE = "Asia/Shanghai"
+OVERRIDE_FIELDS = ("title", "content", "location", "all_day")
 
 
-async def oauth_complete(db: Session, owner_id: str, state: str, code: str) -> None:
-    record = db.scalar(select(Record).where(Record.owner_id == owner_id, Record.kind == "oauth_state",
-                       Record.title == hashlib.sha256(state.encode()).hexdigest(),
-                       Record.status == "active", Record.due_at > utcnow(), Record.deleted_at.is_(None)))
-    if not record:
-        raise HTTPException(400, "OAuth state expired or invalid")
-    # Consume before exchange; callback replay must not exchange credentials twice.
-    claimed = db.execute(update(Record).where(Record.id == record.id, Record.status == "active").values(status="consumed", version=record.version + 1))
-    if claimed.rowcount != 1:
-        db.rollback()
-        raise HTTPException(409, "OAuth callback has already been consumed")
-    db.commit()
-    config = get_settings()
-    async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
-        response = await client.post("https://oauth2.googleapis.com/token", data={
-            "code": code, "client_id": config.google_client_id, "client_secret": config.google_client_secret,
-            "redirect_uri": config.google_redirect_uri, "grant_type": "authorization_code"})
-    if response.is_error:
-        raise HTTPException(502, "Google OAuth token exchange failed")
-    tokens = response.json()
-    integrations = db.scalars(select(Record).where(Record.owner_id == owner_id, Record.kind == "integration", Record.deleted_at.is_(None))).all()
-    existing = next((row for row in integrations if row.data.get("kind") == "google_calendar"), None)
-    row = existing or Record(owner_id=owner_id, kind="integration", title="Google Calendar")
-    row.status = "connected"
-    row.data = {"kind": "google_calendar", "permissions": [GOOGLE_SCOPES], "trusted": True}
-    row.extra = {"encrypted_tokens": encrypt_config(tokens),
-                 "expires_at": (utcnow() + timedelta(seconds=tokens.get("expires_in", 3600))).isoformat()}
-    db.add(row)
-    audit(db, owner_id, "calendar.oauth_connected")
-    db.commit()
+def _zone(name: str | None) -> ZoneInfo:
+    try:
+        return recurrence.resolve_timezone(name)
+    except recurrence.RecurrenceError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
-def google_connection(db: Session, owner_id: str) -> Record | None:
-    # A paginated integration list cannot establish whether this provider is
-    # connected; filter by owner/provider before taking the connection snapshot.
-    return db.scalar(select(Record).where(
-        Record.owner_id == owner_id, Record.kind == "integration",
-        Record.status == "connected", Record.deleted_at.is_(None),
-        Record.data["kind"].as_string() == "google_calendar",
-    ).order_by(Record.created_at.desc(), Record.id).limit(1))
+def _moment(value) -> datetime:
+    try:
+        return recurrence.parse_moment(value)
+    except recurrence.RecurrenceError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
-async def calendar_token(db: Session, owner_id: str, *, commit: bool = True) -> str:
-    row = google_connection(db, owner_id)
-    if not row:
-        raise HTTPException(409, "Connect Google Calendar with OAuth first")
-    tokens = decrypt_config(row.extra.get("encrypted_tokens"))
-    from datetime import datetime
-    if row.extra.get("expires_at") and datetime.fromisoformat(row.extra["expires_at"]) <= utcnow():
-        if not tokens.get("refresh_token"):
-            raise HTTPException(401, "Reconnect Google Calendar to refresh authorization")
-        config = get_settings()
-        async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
-            response = await client.post("https://oauth2.googleapis.com/token", data={
-                "client_id": config.google_client_id, "client_secret": config.google_client_secret,
-                "refresh_token": tokens["refresh_token"], "grant_type": "refresh_token"})
-        if response.is_error:
-            raise HTTPException(502, "Google Calendar token refresh failed")
-        tokens.update(response.json())
-        row.extra = {"encrypted_tokens": encrypt_config(tokens),
-                     "expires_at": (utcnow() + timedelta(seconds=tokens.get("expires_in", 3600))).isoformat()}
-        if commit:
-            db.commit()
-    return tokens["access_token"]
+def calendar_view(row: Record) -> dict:
+    data = row.data or {}
+    return {"id": row.id, "name": row.title or data.get("name", ""), "color": data.get("color") or PALETTE[0],
+            "position": int(data.get("position") or 0), "is_default": bool(data.get("is_default")),
+            "visible": bool(data.get("visible", True)), "version": row.version}
 
 
-async def list_google_events(db: Session, owner_id: str, start: str, end: str, *, commit_token: bool = True) -> list[dict]:
-    token = await calendar_token(db, owner_id, commit=commit_token)
-    async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
-        response = await client.get("https://www.googleapis.com/calendar/v3/calendars/primary/events",
-                                    headers={"Authorization": f"Bearer {token}"},
-                                    params={"timeMin": start, "timeMax": end, "singleEvents": "true", "maxResults": 250})
-    if response.is_error:
-        raise HTTPException(502, "Google Calendar query failed")
-    return response.json().get("items", [])
+def _calendar_rows(db: Session, owner_id: str) -> list[Record]:
+    return list(db.scalars(select(Record).where(Record.owner_id == owner_id, Record.kind == "calendar",
+                                                Record.deleted_at.is_(None)).order_by(Record.created_at)).all())
 
 
-async def write_google_event(db: Session, owner_id: str, args: dict) -> dict:
-    from datetime import datetime
-    from personalos.services.records import ensure_no_conflict
-    ensure_no_conflict(db, owner_id, datetime.fromisoformat(args["start_at"]), datetime.fromisoformat(args["end_at"]))
-    await ensure_google_no_conflict(db, owner_id, args["start_at"], args["end_at"])
-    token = await calendar_token(db, owner_id)
-    payload = {"summary": args["title"], "description": args.get("content", ""),
-               "start": {"dateTime": args["start_at"]}, "end": {"dateTime": args["end_at"]}}
-    # Google accepts a caller-supplied stable event ID, preventing duplicate creation after an ambiguous response.
-    if args.get("external_id"):
-        payload["id"] = args["external_id"]
-    async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
-        response = await client.post("https://www.googleapis.com/calendar/v3/calendars/primary/events",
-                                    headers={"Authorization": f"Bearer {token}"}, json=payload)
-    if response.is_error:
-        raise HTTPException(502, "Google Calendar write failed; inspect execution before retrying")
-    result = response.json()
-    from datetime import datetime
-    from personalos.services.records import create_record
-    create_record(db, owner_id, "event", {"title": args["title"], "content": args.get("content", ""),
-                  "start_at": datetime.fromisoformat(args["start_at"]), "end_at": datetime.fromisoformat(args["end_at"]),
-                  "provider": "google", "external_id": result["id"], "external_etag": result.get("etag")})
-    return {"external_id": result["id"], "html_link": result.get("htmlLink"), "undo_supported": True}
+def default_calendar(db: Session, owner_id: str) -> Record | None:
+    return next((row for row in _calendar_rows(db, owner_id) if (row.data or {}).get("is_default")), None)
 
 
-async def get_google_event(db: Session, owner_id: str, event_id: str) -> dict:
-    import re
-    if not re.fullmatch(r"[a-zA-Z0-9_@.\-]{1,300}", event_id):
-        raise HTTPException(422, "Invalid Google event ID")
-    token = await calendar_token(db, owner_id)
-    async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
-        response = await client.get(f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{event_id}",
-                                    headers={"Authorization": f"Bearer {token}"})
-    if response.status_code == 404:
-        raise HTTPException(404, "Google event was not found")
-    if response.is_error:
-        raise HTTPException(502, "Google Calendar query failed")
-    return response.json()
+def ensure_default_calendar(db: Session, owner_id: str) -> Record:
+    existing = default_calendar(db, owner_id)
+    if existing is not None:
+        return existing
+    return create_record(db, owner_id, "calendar", {"name": DEFAULT_CALENDAR_NAME, "color": PALETTE[0],
+                                                   "position": 0, "is_default": True, "visible": True})
 
 
-async def modify_google_event(db: Session, owner_id: str, args: dict, *, delete: bool = False) -> dict:
-    if not delete:
-        from datetime import datetime
-        from personalos.services.records import ensure_no_conflict
-        mirrors = db.scalars(select(Record).where(Record.owner_id == owner_id, Record.kind == "event", Record.deleted_at.is_(None))).all()
-        own_mirror = next((r for r in mirrors if r.data.get("external_id") == args["external_id"]), None)
-        ensure_no_conflict(db, owner_id, datetime.fromisoformat(args["start_at"]), datetime.fromisoformat(args["end_at"]), own_mirror.id if own_mirror else "")
-        await ensure_google_no_conflict(db, owner_id, args["start_at"], args["end_at"], args["external_id"])
-    from urllib.parse import quote
-    from personalos.services.records import audit
-    token = await calendar_token(db, owner_id)
-    event_id = args["external_id"]
-    url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{quote(event_id, safe='')}"
-    headers = {"Authorization": f"Bearer {token}", "If-Match": args["etag"]}
-    async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
-        if delete:
-            response = await client.delete(url, headers=headers)
-        else:
-            response = await client.patch(url, headers=headers, json={
-                "summary": args["title"], "description": args.get("content", ""),
-                "start": {"dateTime": args["start_at"]}, "end": {"dateTime": args["end_at"]}})
-    if response.status_code == 412:
-        raise HTTPException(409, "Google event changed since approval was requested; request fresh approval")
-    if response.is_error:
-        raise HTTPException(502, "Google Calendar operation failed; reconcile before retrying")
-    mirrors = db.scalars(select(Record).where(Record.owner_id == owner_id, Record.kind == "event", Record.deleted_at.is_(None))).all()
-    mirror = next((row for row in mirrors if row.data.get("external_id") == event_id), None)
-    if mirror:
-        if delete:
-            mirror.deleted_at = utcnow()
-        else:
-            from datetime import datetime
-            mirror.title = args["title"]
-            mirror.content = args.get("content", "")
-            mirror.start_at = datetime.fromisoformat(args["start_at"])
-            mirror.end_at = datetime.fromisoformat(args["end_at"])
-        mirror.version += 1
-    audit(db, owner_id, "calendar.deleted" if delete else "calendar.updated", event_id)
-    db.commit()
-    return {"deleted": True, "external_id": event_id} if delete else response.json()
+def list_calendars(db: Session, owner_id: str) -> list[Record]:
+    ensure_default_calendar(db, owner_id)
+    return sorted(_calendar_rows(db, owner_id),
+                  key=lambda row: (int((row.data or {}).get("position") or 0), row.created_at))
 
 
-async def disconnect_google(db: Session, owner_id: str, integration_id: str, *, commit: bool = True) -> dict:
-    from personalos.services.records import owned
-    row = owned(db, Record, owner_id, integration_id)
-    if row.kind != "integration" or row.data.get("kind") != "google_calendar":
-        raise HTTPException(404, "Google Calendar connection not found")
-    tokens = decrypt_config(row.extra.get("encrypted_tokens"))
-    token = tokens.get("refresh_token") or tokens.get("access_token")
-    if token:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
-            response = await client.post("https://oauth2.googleapis.com/revoke", data={"token": token})
-        # Do not destroy the only revocation credential after an ambiguous/failed remote request.
-        if response.status_code != 200:
-            raise HTTPException(502, "Google authorization revocation could not be verified")
-    row.extra = {}
-    row.data = {"kind": "google_calendar", "trusted": False, "permissions": []}
-    row.status = "disconnected"
-    row.deleted_at = utcnow()
+def _owned_calendar(db: Session, owner_id: str, calendar_id: str, *, lock: bool = False) -> Record:
+    query = select(Record).where(Record.id == calendar_id, Record.owner_id == owner_id,
+                                 Record.kind == "calendar", Record.deleted_at.is_(None))
+    row = db.scalar(query.with_for_update() if lock else query)
+    if row is None:
+        raise HTTPException(404, "Calendar not found")
+    return row
+
+
+def _color(value: str | None) -> str:
+    color = (value or "").strip().lower()
+    if color not in PALETTE:
+        raise HTTPException(422, "Use one of the calendar colors: " + ", ".join(PALETTE))
+    return color
+
+
+def create_calendar(db: Session, owner_id: str, payload) -> Record:
+    color = _color(payload.color)
+    ensure_default_calendar(db, owner_id)
+    position = int(db.scalar(select(func.count()).select_from(Record).where(
+        Record.owner_id == owner_id, Record.kind == "calendar", Record.deleted_at.is_(None))) or 0)
+    return create_record(db, owner_id, "calendar", {"name": payload.name.strip(), "color": color,
+                                                   "position": position, "is_default": False, "visible": True})
+
+
+def update_calendar(db: Session, owner_id: str, calendar_id: str, payload) -> Record:
+    row = _owned_calendar(db, owner_id, calendar_id, lock=True)
+    data = dict(row.data or {})
+    if payload.name is not None:
+        data["name"] = payload.name.strip()
+        row.title = data["name"]
+    if payload.color is not None:
+        data["color"] = _color(payload.color)
+    if payload.position is not None:
+        data["position"] = payload.position
+    if payload.visible is not None:
+        data["visible"] = payload.visible
+    row.data = data
+    row.updated_at = utcnow()
     row.version += 1
-    audit(db, owner_id, "calendar.disconnected", row.id)
-    if commit:
+    audit(db, owner_id, "calendar.updated", row.id)
+    db.commit()
+    return row
+
+
+def delete_calendar(db: Session, owner_id: str, calendar_id: str, *, move_to: str | None = None) -> dict:
+    row = _owned_calendar(db, owner_id, calendar_id, lock=True)
+    if (row.data or {}).get("is_default"):
+        raise HTTPException(409, "The default calendar cannot be deleted")
+    if len(_calendar_rows(db, owner_id)) <= 1:
+        raise HTTPException(409, "Keep at least one calendar")
+    events = list(db.scalars(select(Record).where(
+        Record.owner_id == owner_id, Record.kind == "event", Record.deleted_at.is_(None),
+        Record.data["calendar_id"].as_string() == row.id)).all())
+    moved = 0
+    if events:
+        if not move_to:
+            raise HTTPException(409, {"message": "Calendar is not empty; pass move_to=<calendar_id>",
+                                      "events": len(events)})
+        if move_to == row.id:
+            raise HTTPException(422, "move_to must reference another calendar")
+        target = _owned_calendar(db, owner_id, move_to, lock=True)
+        now = utcnow()
+        for event in events:
+            event.data = {**(event.data or {}), "calendar_id": target.id}
+            event.updated_at = now
+            event.version += 1
+            moved += 1
+    now = utcnow()
+    row.deleted_at = now
+    row.updated_at = now
+    row.version += 1
+    audit(db, owner_id, "calendar.deleted", row.id, {"moved_events": moved})
+    db.commit()
+    return {"deleted": True, "moved_events": moved}
+
+
+def resolve_calendar(db: Session, owner_id: str, calendar_id: str | None) -> Record:
+    if calendar_id:
+        return _owned_calendar(db, owner_id, calendar_id)
+    return ensure_default_calendar(db, owner_id)
+
+
+def _clean_exdates(raw) -> list[str]:
+    return sorted({recurrence.occurrence_key(_moment(value)) for value in raw or []})
+
+
+def _canonical_overrides(raw) -> dict:
+    result = {}
+    for key, value in (raw or {}).items():
+        item = value if isinstance(value, dict) else value.model_dump()
+        if not item.get("start_at") or not item.get("end_at"):
+            raise HTTPException(422, "An event override needs start_at and end_at")
+        entry = {field: item[field] for field in OVERRIDE_FIELDS if item.get(field) is not None}
+        entry["start_at"] = recurrence.occurrence_key(_moment(item["start_at"]))
+        entry["end_at"] = recurrence.occurrence_key(_moment(item["end_at"]))
+        result[recurrence.occurrence_key(_moment(key))] = entry
+    return result
+
+
+def _event_data(values: dict, calendar_id: str, *, overrides=None, exdates=None) -> dict:
+    return {"calendar_id": calendar_id, "location": values.get("location") or "",
+            "all_day": bool(values.get("all_day")), "timezone": values.get("timezone") or DEFAULT_TIMEZONE,
+            "rrule": values.get("rrule"),
+            "exdates": _clean_exdates(values.get("exdates")) if exdates is None else exdates,
+            "overrides": _canonical_overrides(values.get("overrides")) if overrides is None else overrides,
+            "reminders": sorted({int(minutes) for minutes in values.get("reminders") or []}),
+            "provider": "local"}
+
+
+def event_view(row: Record, occurrence: recurrence.Occurrence | None = None,
+               fallback_timezone: str = DEFAULT_TIMEZONE) -> dict:
+    data = row.data or {}
+    recurring = bool(data.get("rrule"))
+    view = serialize(row)
+    if occurrence is not None:
+        view["start_at"], view["end_at"] = occurrence.start, occurrence.end
+    overridden = bool(occurrence and occurrence.override)
+    moved = overridden and occurrence.start != occurrence.occurrence_start
+    view.update({
+        "calendar_id": data.get("calendar_id"), "location": data.get("location") or "",
+        "all_day": bool(data.get("all_day")), "timezone": data.get("timezone") or fallback_timezone,
+        "rrule": data.get("rrule"), "exdates": list(data.get("exdates") or []),
+        "overrides": dict(data.get("overrides") or {}),
+        "reminders": [int(minutes) for minutes in data.get("reminders") or []], "provider": "local",
+        "recurring": recurring, "occurrence_start": occurrence.occurrence_start if occurrence else row.start_at,
+        "recurrence_id": row.id if recurring else None, "is_override": overridden,
+        # An exception is an instance whose edited time no longer matches its rule position.
+        "is_exception": moved,
+    })
+    if overridden:
+        # A single edited occurrence presents its own title, text, place and length.
+        for field in OVERRIDE_FIELDS:
+            if occurrence.override.get(field) is not None:
+                view[field] = occurrence.override[field]
+    return view
+
+
+def list_event_views(db: Session, owner_id: str, *, start: datetime | None = None, end: datetime | None = None,
+                     timezone: str | None = None, limit: int | None = None, offset: int = 0) -> list[dict]:
+    if start is None and end is None:
+        rows = list_records(db, owner_id, "event", 100 if limit is None else limit, offset)
+        return [event_view(row) for row in rows]
+    if start is None or end is None:
+        raise HTTPException(422, "Provide both calendar window start and end")
+    if start.utcoffset() is None or end.utcoffset() is None:
+        raise HTTPException(422, "Calendar window start and end must include a timezone")
+    if start >= end:
+        raise HTTPException(422, "Calendar window start must be before end")
+    fallback = (_zone(timezone).key if timezone else DEFAULT_TIMEZONE)
+    rows = db.scalars(select(Record).where(
+        Record.owner_id == owner_id, Record.kind == "event", Record.deleted_at.is_(None),
+        Record.start_at < end,
+        # A series that began long before the window still owns instances inside it.
+        or_(Record.end_at > start, Record.data["rrule"].as_string().is_not(None)),
+    ).order_by(Record.start_at, Record.id)).all()
+    views: list[dict] = []
+    for row in rows:
+        data = row.data or {}
+        if not data.get("rrule"):
+            if row.end_at is not None and row.end_at > start:
+                views.append(event_view(row, fallback_timezone=fallback))
+            continue
+        try:
+            occurrences = recurrence.expand(row.start_at, row.end_at or row.start_at, data, start, end,
+                                            fallback_timezone=fallback)
+        except recurrence.RecurrenceError as exc:
+            raise HTTPException(422, f"Event {row.id} has an unusable recurrence: {exc}") from exc
+        views.extend(event_view(row, occurrence, fallback_timezone=fallback) for occurrence in occurrences)
+    views.sort(key=lambda item: (item["start_at"], item["id"]))
+    return views[:limit] if limit is not None else views
+
+
+def create_event(db: Session, owner_id: str, payload: EventInput) -> dict:
+    values = payload.model_dump()
+    zone = _zone(values.get("timezone"))
+    start_at, end_at = recurrence.normalize_range(values["start_at"], values["end_at"], zone, values["all_day"])
+    calendar = resolve_calendar(db, owner_id, values.get("calendar_id"))
+    ensure_no_conflict(db, owner_id, start_at, end_at)
+    row = create_record(db, owner_id, "event", {
+        "title": values["title"], "content": values["content"], "start_at": start_at, "end_at": end_at,
+        "extra": values.get("extra") or {},
+        **_event_data({**values, "timezone": zone.key}, calendar.id)})
+    return event_view(row)
+
+
+def _locked_event(db: Session, owner_id: str, event_id: str) -> Record:
+    row = db.scalar(select(Record).where(Record.id == event_id, Record.owner_id == owner_id,
+                                         Record.kind == "event", Record.deleted_at.is_(None)).with_for_update())
+    if row is None:
+        raise HTTPException(404, "Event not found")
+    return row
+
+
+def _check_version(row: Record, payload: dict) -> None:
+    version = payload.get("version")
+    if version is None:
+        return
+    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+        raise HTTPException(422, "A positive version is required")
+    if version != row.version:
+        raise HTTPException(409, "Item changed. Refresh before saving again")
+
+
+def _update_base(db: Session, owner_id: str, row: Record, payload: dict) -> Record:
+    values = EventInput.model_validate({**serialize(row), **payload}).model_dump()
+    zone = _zone(values.get("timezone"))
+    start_at, end_at = recurrence.normalize_range(values["start_at"], values["end_at"], zone, values["all_day"])
+    calendar = resolve_calendar(db, owner_id, values.get("calendar_id"))
+    ensure_no_conflict(db, owner_id, start_at, end_at, row.id)
+    row.title, row.content = values["title"], values["content"]
+    row.start_at, row.end_at = start_at, end_at
+    row.extra = values.get("extra") or {}
+    row.data = _event_data({**values, "timezone": zone.key}, calendar.id)
+    row.updated_at = utcnow()
+    row.version += 1
+    audit(db, owner_id, "event.updated", row.id)
+    db.commit()
+    return row
+
+
+def _split_duration(row: Record, zone: ZoneInfo) -> timedelta:
+    if (row.data or {}).get("all_day"):
+        days = (row.end_at.astimezone(zone).date() - row.start_at.astimezone(zone).date()).days
+        return timedelta(days=max(days, 1))
+    return row.end_at - row.start_at
+
+
+def _apply_override(db: Session, owner_id: str, row: Record, payload: dict, split: datetime, zone: ZoneInfo) -> dict:
+    data = dict(row.data or {})
+    key = recurrence.occurrence_key(split)
+    if key in set(data.get("exdates") or []):
+        raise HTTPException(409, "This occurrence was deleted; edit the series instead")
+    occurrences = recurrence.instance_at(row.start_at, row.end_at, data, split)
+    if occurrences is None:
+        raise HTTPException(404, "Occurrence is not part of this event")
+    current = occurrences
+    edited = dict(current.override or {})
+    for field in OVERRIDE_FIELDS:
+        if field in payload:
+            edited[field] = payload[field]
+    all_day = bool(edited.get("all_day", data.get("all_day")))
+    start_at = _moment(payload["start_at"]) if payload.get("start_at") else current.start
+    end_at = _moment(payload["end_at"]) if payload.get("end_at") else current.end
+    start_at, end_at = recurrence.normalize_range(start_at, end_at, zone, all_day)
+    if end_at <= start_at:
+        raise HTTPException(422, "end_at must be after start_at")
+    ensure_no_conflict(db, owner_id, start_at, end_at, row.id)
+    overrides = dict(data.get("overrides") or {})
+    overrides[key] = {"title": edited.get("title", row.title),
+                      "content": edited.get("content", row.content),
+                      "location": edited.get("location", data.get("location") or ""),
+                      "all_day": all_day,
+                      "start_at": recurrence.occurrence_key(start_at),
+                      "end_at": recurrence.occurrence_key(end_at)}
+    data["overrides"] = overrides
+    row.data = data
+    row.updated_at = utcnow()
+    row.version += 1
+    audit(db, owner_id, "event.occurrence_updated", row.id, {"occurrence_start": key})
+    db.commit()
+    return event_view(row, recurrence.Occurrence(start_at, end_at, current.occurrence_start, overrides[key]))
+
+
+def _split_following(db: Session, owner_id: str, row: Record, payload: dict, split: datetime,
+                     zone: ZoneInfo, index: int) -> dict:
+    data = dict(row.data or {})
+    parts = recurrence.parse_rrule(data.get("rrule"))
+    merged = {**serialize(row), **payload}
+    if payload.get("start_at") is None:
+        merged["start_at"] = split
+    if payload.get("end_at") is None:
+        merged["end_at"] = split + _split_duration(row, zone)
+    merged["rrule"] = recurrence.rule_text(recurrence.remainder_parts(parts, index)) or None
+    merged["exdates"] = [value for value in (data.get("exdates") or []) if _moment(value) >= split]
+    merged["overrides"] = {key: value for key, value in (data.get("overrides") or {}).items()
+                           if _moment(key) >= split}
+    values = EventInput.model_validate(merged).model_dump()
+    new_zone = _zone(values.get("timezone"))
+    start_at, end_at = recurrence.normalize_range(values["start_at"], values["end_at"], new_zone, values["all_day"])
+    calendar = resolve_calendar(db, owner_id, values.get("calendar_id"))
+    ensure_no_conflict(db, owner_id, start_at, end_at, row.id)
+    data["rrule"] = recurrence.rule_text(recurrence.truncated_parts(parts, split))
+    data["exdates"] = [value for value in (data.get("exdates") or []) if _moment(value) < split]
+    data["overrides"] = {key: value for key, value in (data.get("overrides") or {}).items()
+                         if _moment(key) < split}
+    row.data = data
+    row.updated_at = utcnow()
+    row.version += 1
+    notifications.drop_notifications(db, owner_id, row.id, from_moment=split)
+    created = create_record(db, owner_id, "event", {
+        "title": values["title"], "content": values["content"], "start_at": start_at, "end_at": end_at,
+        "extra": values.get("extra") or {},
+        **_event_data({**values, "timezone": new_zone.key}, calendar.id)})
+    audit(db, owner_id, "event.split", row.id, {"occurrence_start": recurrence.occurrence_key(split),
+                                               "new_event_id": created.id})
+    db.commit()
+    return event_view(created)
+
+
+def update_event(db: Session, owner_id: str, event_id: str, payload: dict, *, scope: str = "all",
+                 occurrence_start: datetime | None = None) -> dict:
+    row = _locked_event(db, owner_id, event_id)
+    _check_version(row, payload)
+    data = row.data or {}
+    recurring = bool(data.get("rrule"))
+    if scope in {"this", "following"} and occurrence_start is None:
+        raise HTTPException(422, "occurrence_start is required for this scope")
+    if scope == "all" or not recurring:
+        return event_view(_update_base(db, owner_id, row, payload))
+    zone = _zone(data.get("timezone"))
+    split = _moment(occurrence_start)
+    index = recurrence.occurrence_index(row.start_at, data, split, zone)
+    if index < 0:
+        raise HTTPException(404, "Occurrence is not part of this event")
+    if scope == "this":
+        return _apply_override(db, owner_id, row, payload, split, zone)
+    if index == 0:
+        return event_view(_update_base(db, owner_id, row, payload))
+    return _split_following(db, owner_id, row, payload, split, zone, index)
+
+
+def _delete_series(db: Session, owner_id: str, row: Record) -> dict:
+    now = utcnow()
+    row.deleted_at = now
+    row.updated_at = now
+    row.version += 1
+    notifications.drop_notifications(db, owner_id, row.id)
+    audit(db, owner_id, "event.deleted", row.id)
+    db.commit()
+    return {"deleted": True}
+
+
+def delete_event(db: Session, owner_id: str, event_id: str, *, scope: str = "all",
+                 occurrence_start: datetime | None = None, version: int | None = None) -> dict:
+    row = _locked_event(db, owner_id, event_id)
+    if version is not None and version != row.version:
+        raise HTTPException(409, "Item changed. Refresh before deleting")
+    data = dict(row.data or {})
+    recurring = bool(data.get("rrule"))
+    if scope in {"this", "following"} and occurrence_start is None:
+        raise HTTPException(422, "occurrence_start is required for this scope")
+    if scope == "all" or not recurring:
+        return _delete_series(db, owner_id, row)
+    zone = _zone(data.get("timezone"))
+    split = _moment(occurrence_start)
+    index = recurrence.occurrence_index(row.start_at, data, split, zone)
+    if index < 0:
+        raise HTTPException(404, "Occurrence is not part of this event")
+    key = recurrence.occurrence_key(split)
+    if scope == "this":
+        data["exdates"] = sorted({*(data.get("exdates") or []), key})
+        overrides = dict(data.get("overrides") or {})
+        overrides.pop(key, None)
+        data["overrides"] = overrides
+        now = utcnow()
+        row.data = data
+        row.updated_at = now
+        row.version += 1
+        notifications.drop_notifications(db, owner_id, row.id, occurrence=split)
+        audit(db, owner_id, "event.occurrence_deleted", row.id, {"occurrence_start": key})
         db.commit()
-    return {"disconnected": True, "authorization_revoked": True}
-
-
-async def ensure_google_no_conflict(db: Session, owner_id: str, start: str, end: str, exclude_id: str = "") -> None:
-    events = await list_google_events(db, owner_id, start, end, commit_token=False)
-    conflicts = [event for event in events if event.get("id") != exclude_id and event.get("status") != "cancelled" and event.get("transparency") != "transparent"]
-    if conflicts:
-        raise HTTPException(409, {"message": "Google Calendar conflict", "event_ids": [item["id"] for item in conflicts]})
+        return {"deleted": True}
+    if index == 0:
+        return _delete_series(db, owner_id, row)
+    parts = recurrence.parse_rrule(data.get("rrule"))
+    data["rrule"] = recurrence.rule_text(recurrence.truncated_parts(parts, split))
+    data["exdates"] = [value for value in (data.get("exdates") or []) if _moment(value) < split]
+    data["overrides"] = {item: value for item, value in (data.get("overrides") or {}).items()
+                         if _moment(item) < split}
+    now = utcnow()
+    row.data = data
+    row.updated_at = now
+    row.version += 1
+    notifications.drop_notifications(db, owner_id, row.id, from_moment=split)
+    audit(db, owner_id, "event.truncated", row.id, {"occurrence_start": key})
+    db.commit()
+    return {"deleted": True}

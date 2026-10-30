@@ -136,7 +136,7 @@ def test_calendar_conflict_and_automation_validation(clients):
     assert first.post("/api/automations", json={"title": "Invalid", "prompt": "briefing", "cron": "bad"}).status_code == 422
     assert first.post("/api/automations", json={"title": "Invalid", "prompt": "briefing", "timezone": "not/a-zone"}).status_code == 422
     assert first.post("/api/chat/stream", json={"message": "Hello"}).status_code == 503
-    assert first.get("/api/calendar/oauth/start").status_code == 503
+    assert first.get("/api/calendar/oauth/start").status_code in {404, 405}
 
 
 def test_cross_origin_mutations_refused(clients):

@@ -4,11 +4,11 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 
 import httpx
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
@@ -19,19 +19,22 @@ from sqlalchemy.orm import Session
 from personalos.config import get_settings
 from personalos.db import get_db, utcnow
 from personalos.models import AuthSession, Automation, Execution, Message, Record, User
-from personalos.schemas import (ApprovalInput, ResumeApprovalInput, AutomationInput, ChatInput, Credentials, EventInput,
-                               ChatDiagnosticsInput, EmbeddingDiagnosticsInput, IntegrationInput, MemoryInput, SettingsInput, TaskInput)
+from personalos.schemas import (ApprovalInput, ResumeApprovalInput, AutomationInput, CalendarCreateInput, CalendarPatchInput,
+                               ChatInput, Credentials, EventInput, ChatDiagnosticsInput, EmbeddingDiagnosticsInput,
+                               IntegrationInput, MemoryInput, SettingsInput, TaskInput)
 from personalos.security import (COOKIE_NAME, current_user, decrypt_config, encrypt_config,
                                 new_session, password_hasher)
 from personalos.services.agent import durable_graph_resources, generate_briefing, initialize_graph_storage, model_config, stream_agent
 from personalos.services.automations import create_automation, list_automations, list_automation_runs
 from personalos.services.accounts import account_lease, assert_account_writable
-from personalos.services.calendar import ensure_google_no_conflict, get_google_event, google_connection, list_google_events, oauth_complete, oauth_start
+from personalos.services import notifications as reminders
+from personalos.services.calendar import (calendar_view, create_calendar, create_event, delete_calendar, delete_event,
+                                          list_calendars, list_event_views, update_calendar, update_event)
 from personalos.services.memory import MemoryService
 from personalos.services.memory_deletion import approval_views, RECOVERABLE
 from personalos.services.network import validate_public_url
-from personalos.services.records import (audit, cas_update, create_record, ensure_no_conflict,
-                                        list_events, list_records, owned, patch_record, query_tasks, serialize)
+from personalos.services.records import (audit, cas_update, create_record, list_records, owned, patch_record,
+                                         query_tasks, serialize)
 from personalos.services.tools import execute_approval, mcp_tools, request_approval
 
 logger = logging.getLogger(__name__)
@@ -185,9 +188,6 @@ def delete_request(db, user, item_id, version, kind):
     if row.version != version:
         raise HTTPException(409, "Item changed. Refresh before requesting deletion")
     tool = "memory.delete" if kind == "memory" else "record.delete"
-    if kind == "integration" and row.data.get("kind") == "google_calendar":
-        approval = request_approval(db, user.id, "calendar.disconnect", {"integration_id": item_id}, "Revoke Google Calendar authorization")
-        return {"approval_required": True, "approval": serialize(approval)}
     approval = request_approval(db, user.id, tool, {"id": item_id, "version": version}, f"Delete {kind}: {row.title or row.id}")
     return {"approval_required": True, "approval": serialize(approval)}
 
@@ -253,54 +253,66 @@ def delete_memory(item_id: str, user: Viewer, db: DB, version: int = Query(..., 
     return delete_request(db, user, item_id, version, "memory")
 
 
+@app.get("/api/calendars")
+def calendars(user: Viewer, db: DB):
+    return {"items": [calendar_view(row) for row in list_calendars(db, user.id)]}
+
+
+@app.post("/api/calendars", status_code=201)
+def add_calendar(payload: CalendarCreateInput, user: Viewer, db: DB):
+    return calendar_view(create_calendar(db, user.id, payload))
+
+
+@app.patch("/api/calendars/{calendar_id}")
+def patch_calendar(calendar_id: str, payload: CalendarPatchInput, user: Viewer, db: DB):
+    return calendar_view(update_calendar(db, user.id, calendar_id, payload))
+
+
+@app.delete("/api/calendars/{calendar_id}", status_code=202)
+def remove_calendar(calendar_id: str, user: Viewer, db: DB, move_to: str | None = Query(None, max_length=36)):
+    return delete_calendar(db, user.id, calendar_id, move_to=move_to)
+
+
 @app.get("/api/events")
-def events(user: Viewer, db: DB, limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0),
-           start: datetime | None = Query(None), end: datetime | None = Query(None)):
-    return [serialize(r) for r in list_events(db, user.id, limit, offset, start=start, end=end)]
+def events(user: Viewer, db: DB, limit: int | None = Query(None, ge=1, le=500), offset: int = Query(0, ge=0),
+           start: datetime | None = Query(None), end: datetime | None = Query(None),
+           timezone: str | None = Query(None, max_length=100)):
+    return list_event_views(db, user.id, start=start, end=end, timezone=timezone, limit=limit, offset=offset)
 
 
 @app.post("/api/events", status_code=201)
-async def add_event(payload: EventInput, user: Viewer, db: DB):
-    ensure_no_conflict(db, user.id, payload.start_at, payload.end_at)
-    if payload.provider == "google":
-        await ensure_google_no_conflict(db, user.id, payload.start_at.isoformat(), payload.end_at.isoformat())
-        import uuid
-        args = payload.model_dump(mode="json")
-        args["external_id"] = uuid.uuid4().hex
-        row = request_approval(db, user.id, "calendar.create_external", args, f"Create Google event: {payload.title}")
-        return {"approval_required": True, "approval": serialize(row)}
-    return serialize(create_record(db, user.id, "event", payload.model_dump()))
+def add_event(payload: EventInput, user: Viewer, db: DB):
+    return create_event(db, user.id, payload)
 
 
 @app.patch("/api/events/{item_id}")
-def update_event(item_id: str, user: Viewer, db: DB, payload: dict = Body(...)):
-    row = owned(db, Record, user.id, item_id)
-    values = EventInput.model_validate({**serialize(row), **payload})
-    if values.provider == "google":
-        raise HTTPException(409, "External event modification requires a provider event ID and an approval")
-    ensure_no_conflict(db, user.id, values.start_at, values.end_at, item_id)
-    return serialize(patch_record(db, user.id, "event", item_id, require_version(payload), values.model_dump()))
+def patch_event(item_id: str, user: Viewer, db: DB, payload: dict = Body(...),
+                scope: Literal["this", "following", "all"] = Query("all"),
+                occurrence_start: datetime | None = Query(None)):
+    return update_event(db, user.id, item_id, payload, scope=scope, occurrence_start=occurrence_start)
 
 
 @app.delete("/api/events/{item_id}", status_code=202)
-def delete_event(item_id: str, user: Viewer, db: DB, version: int = Query(..., ge=1)):
-    return delete_request(db, user, item_id, version, "event")
+def remove_event(item_id: str, user: Viewer, db: DB, scope: Literal["this", "following", "all"] = Query("all"),
+                 occurrence_start: datetime | None = Query(None), version: int | None = Query(None, ge=1)):
+    return delete_event(db, user.id, item_id, scope=scope, occurrence_start=occurrence_start, version=version)
 
 
-@app.get("/api/calendar/oauth/start")
-def calendar_start(user: Viewer, db: DB):
-    return {"authorization_url": oauth_start(db, user.id)}
+@app.get("/api/notifications")
+def notifications(user: Viewer, db: DB, status: Literal["unread", "read"] | None = Query(None),
+                  limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0)):
+    rows, unread = reminders.list_notifications(db, user.id, status, limit, offset)
+    return {"items": [reminders.notification_view(row) for row in rows], "unread": unread}
 
 
-@app.get("/api/calendar/oauth/callback")
-async def calendar_callback(user: Viewer, db: DB, state: str, code: str):
-    await oauth_complete(db, user.id, state, code)
-    return RedirectResponse(get_settings().app_url + "/integrations?calendar=connected", status_code=303)
+@app.post("/api/notifications/read-all", status_code=202)
+def read_all_notifications(user: Viewer, db: DB):
+    return {"read": reminders.mark_all_read(db, user.id)}
 
 
-@app.get("/api/calendar/google/events")
-async def google_events(user: Viewer, db: DB, start: str, end: str):
-    return await list_google_events(db, user.id, start, end)
+@app.post("/api/notifications/{notification_id}/read", status_code=202)
+def read_notification(notification_id: str, user: Viewer, db: DB):
+    return {"read": reminders.mark_read(db, user.id, notification_id)}
 
 
 @app.get("/api/automations")
@@ -362,8 +374,6 @@ def safe_integration(row):
 
 @app.post("/api/integrations", status_code=201)
 async def add_integration(payload: IntegrationInput, user: Viewer, db: DB):
-    if payload.kind == "google_calendar":
-        raise HTTPException(409, "Connect Google Calendar through OAuth")
     allowed = {host.strip() for host in get_settings().mcp_allowed_hosts.split(",") if host.strip()}
     await validate_public_url(payload.url, allowed)
     values = payload.model_dump()
@@ -447,7 +457,7 @@ async def _finish_approval(db: Session, owner_id: str, row: Record):
     except Exception as exc:
         db.rollback()
         row = owned(db, Record, owner_id, item_id)
-        external_write = row.data.get("tool") in {"calendar.create_external", "calendar.update_external", "calendar.delete_external", "mcp.call", "calendar.disconnect"}
+        external_write = row.data.get("tool") in {"mcp.call"}
         uncertain = isinstance(exc, (TimeoutError, httpx.TransportError)) or (external_write and isinstance(exc, HTTPException) and exc.status_code >= 500)
         row.status = "outcome_unknown" if uncertain else "failed"
         row.version += 1
@@ -520,7 +530,6 @@ def settings(user: Viewer, db: DB):
     config = get_settings()
     chat = ChatConfiguration.for_user(user)
     embedding = EmbeddingConfiguration.for_user(user)
-    connection = google_connection(db, user.id)
     return {**chat.public_settings(), **embedding.public_settings(),
             "ai_setup_complete": chat.configured and embedding.configured,
             "missing_configuration_fields": {"chat": chat.missing_fields,
@@ -528,8 +537,6 @@ def settings(user: Viewer, db: DB):
             "name": user.name, "email": user.email,
             "memory_enabled": user.preferences.get("memory_enabled", True), "theme": user.preferences.get("theme", "system"),
             "timezone": user.preferences.get("timezone", "Asia/Shanghai"), "version": user.version,
-            "google_oauth_configured": bool(config.google_client_id and config.google_client_secret),
-            "google_calendar_connection": {"id": connection.id, "version": connection.version} if connection else None,
             "hy_memory_configured": False, "hy_memory_status": "awaiting_authorization", "jev_configured": bool(config.typesafe_api_key),
             "fast_model": user.preferences.get("fast_model", ""), "reasoning_model": user.preferences.get("reasoning_model", ""),
             "decision_provider": user.preferences.get("decision_provider", config.decision_provider)}
@@ -698,7 +705,7 @@ async def add_briefing(user: Viewer, db: DB):
 def dashboard(user: Viewer, db: DB):
     tasks = [serialize(r) for r in query_tasks(db, user.id, 5, open_only=True)]
     start = utcnow()
-    events = [serialize(r) for r in list_events(db, user.id, 4, start=start, end=start + timedelta(days=7))]
+    events = list_event_views(db, user.id, start=start, end=start + timedelta(days=7), limit=4)
     memories = [serialize(r) for r in list_records(db, user.id, "memory")]
     automation_rows = [serialize(row) for row in list_automations(db, user.id)]
     approval_rows = approvals(user, db, 100, 0)
@@ -767,34 +774,13 @@ async def chat(payload: ChatInput, user: Viewer, db: DB):
     return StreamingResponse(leased_events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Session-ID": session_id})
 
 
-@app.patch("/api/calendar/google/events/{event_id}", status_code=202)
-async def update_google_event(event_id: str, payload: EventInput, user: Viewer, db: DB):
-    current = await get_google_event(db, user.id, event_id)
-    await ensure_google_no_conflict(db, user.id, payload.start_at.isoformat(), payload.end_at.isoformat(), event_id)
-    args = {**payload.model_dump(mode="json"), "external_id": event_id, "etag": current["etag"]}
-    approval = request_approval(db, user.id, "calendar.update_external", args, f"Modify Google event: {payload.title}")
-    return {"approval_required": True, "approval": serialize(approval)}
-
-
-@app.delete("/api/calendar/google/events/{event_id}", status_code=202)
-async def delete_google_event(event_id: str, user: Viewer, db: DB):
-    current = await get_google_event(db, user.id, event_id)
-    approval = request_approval(db, user.id, "calendar.delete_external", {"external_id": event_id, "etag": current["etag"]},
-                                f"Delete Google event: {current.get('summary', event_id)}")
-    return {"approval_required": True, "approval": serialize(approval)}
-
-
-@app.post("/api/calendar/google/events/{event_id}/undo", status_code=202)
-async def undo_google_event(event_id: str, user: Viewer, db: DB):
-    return await delete_google_event(event_id, user, db)
-
-
 @app.post("/api/integrations/{item_id}/disconnect", status_code=202)
 def request_disconnect(item_id: str, user: Viewer, db: DB):
     row = owned(db, Record, user.id, item_id)
-    if row.kind != "integration" or row.data.get("kind") != "google_calendar":
-        raise HTTPException(404, "Google Calendar connection not found")
-    approval = request_approval(db, user.id, "calendar.disconnect", {"integration_id": item_id}, "Revoke Google Calendar authorization")
+    if row.kind != "integration" or row.data.get("kind") != "mcp":
+        raise HTTPException(404, "MCP connection not found")
+    approval = request_approval(db, user.id, "record.delete", {"id": item_id, "version": row.version},
+                                f"Disconnect MCP: {row.title or row.id}")
     return {"approval_required": True, "approval": serialize(approval)}
 
 

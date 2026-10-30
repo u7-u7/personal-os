@@ -45,8 +45,8 @@
 - [x] 真实独立Worker+DeepSeek验证：成功保留两条消息；重启后仍仅一个执行、attempts=1；交互续问返回原标记并保留四条消息。
 - [x] 独立负例账号以明确无效Key请求真实供应商，401后Worker失败，仅保留输入，不生成助手成功回复。
 - [x] 本地日历按可见42格时间窗完整分页：336条独立QA日程复现，225条窗内事件完整读取，浏览器与索引检查通过；见calendar-window报告。
-- [ ] 后续独立修复：Google列表读取忽略nextPageToken，可能漏显后续页和漏检查冲突；真实OAuth仍待配置。
-- [ ] 后续独立审计：OAuth完成/token刷新跨await与账户擦除的生命周期fence；目前为代码审阅风险，未完成并发复现。
+- [x] ~~后续独立修复：Google列表读取忽略nextPageToken~~ 作废：2026-10-31 用户决策整体移除 Google 日历，相关路径已删除。
+- [x] ~~后续独立审计：OAuth完成/token刷新跨await与账户擦除的生命周期fence~~ 作废：OAuth 路径随 Google 日历移除而删除。
 
 自动化历史修复PR #7原按heartbeat保持开放；2026-10-29用户明确要求后已核对CI并合并（93119dd）。其真实证据见 `docs/progress/2026-10-29-automation-history.md`。后续日历范围修复见 `docs/progress/2026-10-29-calendar-window.md`；完整外部验收门槛不变。
 
