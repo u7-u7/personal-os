@@ -86,6 +86,7 @@ Use a disposable database for tests. PostgreSQL transaction tests create isolate
 - [Architecture diagram and failure model](docs/architecture.md)
 - [API guide](docs/api.md), [course exercises](docs/course.md), [demonstration script](docs/demo.md)
 - [Verification evidence and remaining gates](docs/verification.md)
+- [Remaining development tasks, priorities and acceptance criteria](docs/roadmap.md)
 
 `apps/web` is Next.js/TypeScript/Tailwind/shadcn/ui primitives/TanStack Query. `apps/api` is FastAPI/Pydantic/SQLAlchemy/Alembic/LangGraph. The Worker is a separate process and PostgreSQL is the task source of truth. CI runs safety checks, PostgreSQL transaction tests and browser acceptance.
 
