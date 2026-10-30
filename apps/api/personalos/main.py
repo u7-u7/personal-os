@@ -49,12 +49,20 @@ DB = Annotated[Session, Depends(get_db)]
 Viewer = Annotated[User, Depends(current_user)]
 
 
+def allowed_origins() -> set[str]:
+    # Operators reach the same UI as localhost and 127.0.0.1; the configured
+    # origin list keeps both reachable without relaxing the guard for others.
+    settings = get_settings()
+    listed = ",".join((settings.web_origin, settings.app_url))
+    return {item.strip().rstrip("/") for item in listed.split(",") if item.strip()}
+
+
 @app.middleware("http")
 async def origin_guard(request: Request, call_next):
     # Browser mutations must originate from our UI; server/CLI clients without Origin still authenticate.
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
         origin = request.headers.get("origin")
-        if origin and origin.rstrip("/") not in {get_settings().web_origin.rstrip("/"), get_settings().app_url.rstrip("/")}:
+        if origin and origin.rstrip("/") not in allowed_origins():
             return Response(content='{"detail":"Cross-origin mutation refused"}', status_code=403, media_type="application/json")
     return await call_next(request)
 
