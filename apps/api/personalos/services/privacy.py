@@ -6,8 +6,6 @@ from sqlalchemy.orm import Session
 
 from personalos.db import utcnow
 from personalos.models import AuthSession, Automation, Execution, Message, Record, User
-from personalos.services.calendar import disconnect_google
-from personalos.services.records import list_records
 from personalos.services.accounts import account_lease
 
 
@@ -21,11 +19,8 @@ async def _delete_account(db: Session, owner_id: str, approval_id: str) -> dict:
     if user is None:
         from fastapi import HTTPException
         raise HTTPException(410, "Account has already been deleted")
-    # Revoke provider authorization before erasing the sole encrypted refresh token.
-    integrations = list_records(db, owner_id, "integration", 10000)
-    for row in integrations:
-        if row.data.get("kind") == "google_calendar":
-            await disconnect_google(db, owner_id, row.id, commit=False)
+    # MCP connections keep no stored credential: erasing the rows below is the
+    # complete disconnect, so no provider revocation receipt is claimed.
     sessions = db.scalars(select(Record.id).where(Record.owner_id == owner_id, Record.kind == "chat_session")).all()
     memory_ids = db.scalars(select(Record.id).where(Record.owner_id == owner_id, Record.kind == "memory")).all()
     # Refuse a false full-purge receipt when external Hy entries exist without a configured purge adapter.
@@ -53,4 +48,4 @@ async def _delete_account(db: Session, owner_id: str, approval_id: str) -> dict:
         secret_config=None, preferences={}, extra={}, deleted_at=now, version=User.version + 1))
     db.commit()
     return {"deleted": True, "canonical_data_erased": True, "graph_state_erased": True,
-            "provider_authorizations_revoked": True, "backup_retention": "Operator backups expire under the deployment retention policy"}
+            "backup_retention": "Operator backups expire under the deployment retention policy"}

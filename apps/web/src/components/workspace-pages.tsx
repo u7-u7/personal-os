@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
   type ReactNode,
 } from "react";
@@ -13,6 +14,7 @@ import {
   ArrowDownToLine,
   ArrowRight,
   ArrowUpRight,
+  Bell,
   Brain,
   CalendarDays,
   Check,
@@ -28,6 +30,7 @@ import {
   Leaf,
   LoaderCircle,
   LockKeyhole,
+  Menu,
   MessageSquare,
   Network,
   Pause,
@@ -46,6 +49,11 @@ import {
   apiAllPages,
   ApiError,
   inputDate,
+  type CalendarColor,
+  type CalendarEvent,
+  type CalendarItem,
+  type EventScope,
+  type NotificationItem,
   type RecordItem,
   type Settings,
   type User,
@@ -250,7 +258,7 @@ interface Dashboard {
     approvals: number;
   };
   tasks: RecordItem[];
-  events: RecordItem[];
+  events: CalendarEvent[];
   memories: RecordItem[];
   automations: RecordItem[];
   approvals: RecordItem[];
@@ -563,18 +571,19 @@ export function DashboardPage({ user }: { user: User }) {
             ) : data?.events.length ? (
               <div className="agenda-list">
                 {data.events.slice(0, 4).map((event) => (
-                  <div className="agenda-item" key={event.id}>
+                  <Link
+                    className="agenda-item"
+                    href="/calendar"
+                    key={event.id}
+                  >
                     <span className="agenda-time">
-                      {timeLabel(event.start_at)}
+                      {event.all_day ? t("All day") : timeLabel(event.start_at)}
                     </span>
                     <div>
                       <strong>{event.title}</strong>
-                      <small>
-                        {dateLabel(event.start_at)} ·{" "}
-                        {t(event.provider || "local")}
-                      </small>
+                      <small>{dateLabel(event.start_at)}</small>
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             ) : (
@@ -1057,333 +1066,623 @@ export function MemoryPage() {
   );
 }
 
-function calendarDate(value: string): Date {
-  // Google all-day dates are local calendar dates, not UTC midnight instants.
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  return dateOnly
-    ? new Date(
-        Number(dateOnly[1]),
-        Number(dateOnly[2]) - 1,
-        Number(dateOnly[3]),
-      )
-    : new Date(value);
+type CalendarView = "day" | "week" | "month";
+
+const calendarPalette: CalendarColor[] = [
+  "blue",
+  "green",
+  "orange",
+  "red",
+  "purple",
+  "yellow",
+  "pink",
+  "teal",
+  "brown",
+  "gray",
+];
+const calendarColorLabels: Record<CalendarColor, string> = {
+  blue: "Blue",
+  green: "Green",
+  orange: "Orange",
+  red: "Red",
+  purple: "Purple",
+  yellow: "Yellow",
+  pink: "Pink",
+  teal: "Teal",
+  brown: "Brown",
+  gray: "Gray",
+};
+/** The palette itself lives in globals.css; JSX only passes the variable. */
+function calendarColorVar(color: CalendarColor) {
+  return `var(--cal-palette-${color})`;
+}
+const calendarNameInputStyle: CSSProperties = {
+  flex: "1 1 100%",
+  minWidth: 0,
+  height: "22px",
+  padding: "0 6px",
+  border: "1px solid var(--cal-hairline)",
+  borderRadius: "6px",
+  background: "var(--surface)",
+  color: "var(--text)",
+  font: "inherit",
+};
+const calendarViews: [CalendarView, string][] = [
+  ["day", "Day"],
+  ["week", "Week"],
+  ["month", "Month"],
+];const eventScopes: [EventScope, string][] = [
+  ["this", "This event"],
+  ["following", "This and following events"],
+  ["all", "All events"],
+];
+const repeatRules: [string, string][] = [
+  ["", "Does not repeat"],
+  ["FREQ=DAILY", "Every day"],
+  ["FREQ=WEEKLY", "Every week"],
+  ["FREQ=MONTHLY", "Every month"],
+  ["FREQ=YEARLY", "Every year"],
+];
+/** Minutes before the event start; the worker turns these into in-app reminders. */
+const eventReminders: [string, string][] = [
+  ["", "No reminder"],
+  ["0", "At start time"],
+  ["5", "5 minutes before"],
+  ["10", "10 minutes before"],
+  ["30", "30 minutes before"],
+  ["60", "1 hour before"],
+  ["1440", "1 day before"],
+];
+
+const HOUR_HEIGHT = 48;
+const SNAP_MINUTES = 15;
+const DAY_MS = 86_400_000;
+
+function browserTimezone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+function startOfDay(value: Date) {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+}
+function addDays(value: Date, days: number) {
+  const next = new Date(value);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+function addMonths(value: Date, months: number) {
+  return new Date(value.getFullYear(), value.getMonth() + months, 1);
+}
+function startOfWeek(value: Date) {
+  const day = startOfDay(value);
+  day.setDate(day.getDate() - ((day.getDay() + 6) % 7));
+  return day;
+}
+function sameDay(left: Date, right: Date) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+function atMinutes(day: Date, minutes: number) {
+  const value = startOfDay(day);
+  value.setMinutes(minutes);
+  return value;
+}
+function snapMinutes(minutes: number) {
+  const snapped = Math.round(minutes / SNAP_MINUTES) * SNAP_MINUTES;
+  return Math.max(0, Math.min(24 * 60, snapped));
+}
+function monthDays(value: Date) {
+  const first = startOfWeek(new Date(value.getFullYear(), value.getMonth(), 1));
+  return Array.from({ length: 42 }, (_, index) => addDays(first, index));
+}
+/** Compact Apple-style gutter label: `9 AM`, `12 PM`, no zero padding. */
+function hourLabel(hour: number) {
+  return `${hour % 12 || 12} ${hour < 12 ? "AM" : "PM"}`;
+}
+function eventRange(item: CalendarEvent) {
+  if (!item.start_at) return null;
+  const start = new Date(item.start_at);
+  if (Number.isNaN(start.getTime())) return null;
+  const raw = item.end_at ? new Date(item.end_at) : start;
+  const end =
+    raw.getTime() > start.getTime()
+      ? raw
+      : new Date(start.getTime() + SNAP_MINUTES * 60_000);
+  return { start, end };
+}
+function eventOverlapsDay(item: CalendarEvent, day: Date) {
+  const range = eventRange(item);
+  if (!range) return false;
+  const dayStart = startOfDay(day).getTime();
+  return range.end.getTime() > dayStart && range.start.getTime() < dayStart + DAY_MS;
+}
+function sortEvents(items: CalendarEvent[]) {
+  return [...items].sort(
+    (left, right) =>
+      (left.start_at ? new Date(left.start_at).getTime() : 0) -
+        (right.start_at ? new Date(right.start_at).getTime() : 0) ||
+      left.id.localeCompare(right.id),
+  );
+}
+function repeatLabel(rule?: string | null) {
+  return (
+    repeatRules.find(([value]) => !!value && !!rule?.includes(value))?.[1] ||
+    "Does not repeat"
+  );
+}
+function repeatValue(rule?: string | null) {
+  return (
+    repeatRules.find(([value]) => !!value && !!rule?.includes(value))?.[0] || ""
+  );
+}
+function eventKey(item: CalendarEvent) {
+  return `${item.id}|${item.occurrence_start || ""}`;
 }
 
-function eventOverlapsDay(item: RecordItem, day: Date): boolean {
-  if (!item.start_at) return false;
-  const start = calendarDate(item.start_at).getTime();
-  const end = item.end_at ? calendarDate(item.end_at).getTime() : start;
-  const dayStart = new Date(day.getFullYear(), day.getMonth(), day.getDate());
-  const dayEnd = new Date(dayStart);
-  dayEnd.setDate(dayEnd.getDate() + 1);
-  // The end is exclusive, including all-day Google events and midnight ends.
-  return end > start
-    ? start < dayEnd.getTime() && end > dayStart.getTime()
-    : start >= dayStart.getTime() && start < dayEnd.getTime();
+interface PositionedEvent {
+  item: CalendarEvent;
+  top: number;
+  height: number;
+  left: number;
+  width: number;
+  short: boolean;
+}
+function positionEvents(items: CalendarEvent[], day: Date): PositionedEvent[] {
+  const dayStart = startOfDay(day).getTime();
+  const blocks = sortEvents(items).flatMap((item) => {
+    const range = eventRange(item);
+    if (!range) return [];
+    const from = Math.max(0, (range.start.getTime() - dayStart) / 60_000);
+    const to = Math.min(24 * 60, (range.end.getTime() - dayStart) / 60_000);
+    if (to <= 0 || from >= 24 * 60) return [];
+    return [{ item, from, to: Math.max(to, from + SNAP_MINUTES) }];
+  });
+  const positioned: PositionedEvent[] = [];
+  let cluster: { block: (typeof blocks)[number]; column: number }[] = [];
+  let clusterEnd = -1;
+  function flush() {
+    if (!cluster.length) return;
+    const columns = Math.max(...cluster.map((entry) => entry.column)) + 1;
+    for (const entry of cluster) {
+      const length = entry.block.to - entry.block.from;
+      positioned.push({
+        item: entry.block.item,
+        top: (entry.block.from / 60) * HOUR_HEIGHT,
+        height: Math.max((length / 60) * HOUR_HEIGHT, 12),
+        left: (entry.column * 100) / columns,
+        width: 100 / columns,
+        short: length <= 30,
+      });
+    }
+    cluster = [];
+    clusterEnd = -1;
+  }
+  for (const block of blocks) {
+    if (cluster.length && block.from >= clusterEnd) flush();
+    const used = new Set(
+      cluster
+        .filter((entry) => entry.block.to > block.from)
+        .map((entry) => entry.column),
+    );
+    let column = 0;
+    while (used.has(column)) column += 1;
+    cluster.push({ block, column });
+    clusterEnd = Math.max(clusterEnd, block.to);
+  }
+  flush();
+  return positioned;
+}
+async function loadCalendarEvents(
+  start: Date,
+  end: Date,
+  timezone: string,
+  signal: AbortSignal,
+) {
+  const records = new Map<string, CalendarEvent>();
+  const pageSize = 200;
+  let offset = 0;
+  // Publish only the complete window; a later page failure must not make a
+  // partially loaded calendar look like complete availability.
+  while (true) {
+    const params = new URLSearchParams({
+      start: start.toISOString(),
+      end: end.toISOString(),
+      timezone,
+      limit: String(pageSize),
+      offset: String(offset),
+    });
+    const page = await api<CalendarEvent[]>(`/events?${params}`, { signal });
+    for (const item of page) records.set(eventKey(item), item);
+    if (page.length < pageSize) return Array.from(records.values());
+    offset += page.length;
+  }
+}
+function useCalendars(enabled = true) {
+  return useQuery({
+    queryKey: ["calendars"],
+    enabled,
+    queryFn: ({ signal }) =>
+      api<{ items: CalendarItem[] }>("/calendars", { signal }),
+  });
 }
 
 export function CalendarPage() {
-  const { t, locale, timeLabel } = useI18n();
-  const configuration = useAIConfiguration();
-  const [showGoogle, setShowGoogle] = useState(false);
-  const [month, setMonth] = useState(() => new Date());
-  const [selected, setSelected] = useState(() => new Date().toDateString());
-  const [edit, setEdit] = useState<RecordItem | "new">();
+  const { t, locale, dateLabel, timeLabel } = useI18n();
   const action = useAction();
-  const googleIntegration = configuration.data?.google_calendar_connection;
-  const connectionPending = configuration.isPending;
-  const connectionError = configuration.error;
-  const googleReady =
-    !!googleIntegration && !connectionPending && !connectionError;
-  const googleUnavailable = showGoogle && !googleReady;
-  const first = new Date(month.getFullYear(), month.getMonth(), 1);
-  const firstCell = new Date(first);
-  firstCell.setDate(1 - ((first.getDay() + 6) % 7));
-  const afterLastCell = new Date(firstCell);
-  afterLastCell.setDate(afterLastCell.getDate() + 42);
-  const windowStart = firstCell.toISOString();
-  const windowEnd = afterLastCell.toISOString();
-  const days = Array.from({ length: 42 }, (_, i) => {
-    const d = new Date(firstCell);
-    d.setDate(d.getDate() + i);
-    return d;
-  });
-  const query = useQuery({
-    queryKey: ["calendar", windowStart, windowEnd],
-    enabled: !showGoogle,
-    queryFn: async ({ signal }) => {
-      const records = new Map<string, RecordItem>();
-      const pageSize = 200;
-      let offset = 0;
-      // Publish only the complete window; a later page failure must not make
-      // a partially loaded calendar look like complete availability.
-      while (true) {
-        const params = new URLSearchParams({
-          start: windowStart,
-          end: windowEnd,
-          limit: String(pageSize),
-          offset: String(offset),
-        });
-        const page = await api<RecordItem[]>(`/events?${params}`, { signal });
-        for (const item of page) records.set(item.id, item);
-        if (page.length < pageSize) return Array.from(records.values());
-        offset += page.length;
-      }
-    },
-  });
-  const google = useQuery({
+  const [view, setView] = useState<CalendarView>("month");
+  const [cursor, setCursor] = useState(() => new Date());
+  const [selected, setSelected] = useState(() => new Date());
+  const [now, setNow] = useState(() => new Date());
+  const [editor, setEditor] = useState<{
+    item?: CalendarEvent;
+    start?: Date;
+    end?: Date;
+  }>();
+  const [popover, setPopover] = useState<{
+    item: CalendarEvent;
+    x: number;
+    y: number;
+  }>();
+  const [scopeTarget, setScopeTarget] = useState<CalendarEvent>();
+  const [moveTarget, setMoveTarget] = useState<{
+    item: CalendarItem;
+    to: string;
+  }>();
+  const [bellOpen, setBellOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const bellRef = useRef<HTMLButtonElement>(null);
+  const bellPanelRef = useRef<HTMLDivElement>(null);
+  const timezone = browserTimezone();
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    if (!bellOpen) return;
+    function down(event: MouseEvent) {
+      const target = event.target as Node;
+      if (bellRef.current?.contains(target)) return;
+      if (bellPanelRef.current?.contains(target)) return;
+      setBellOpen(false);
+    }
+    function key(event: KeyboardEvent) {
+      if (event.key === "Escape") setBellOpen(false);
+    }
+    window.addEventListener("mousedown", down);
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("mousedown", down);
+      window.removeEventListener("keydown", key);
+    };
+  }, [bellOpen]);
+  const days =
+    view === "month"
+      ? monthDays(cursor)
+      : view === "week"
+        ? Array.from({ length: 7 }, (_, index) =>
+            addDays(startOfWeek(cursor), index),
+          )
+        : [startOfDay(cursor)];
+  const windowEnd = addDays(days[days.length - 1], 1);
+  const queryStart = addDays(days[0], -1);
+  const calendars = useCalendars();
+  const calendarList = calendars.data?.items || [];
+  const events = useQuery({
     queryKey: [
-      "google-events",
-      windowStart,
-      windowEnd,
-      googleIntegration?.id,
-      googleIntegration?.version,
+      "calendar-events",
+      queryStart.toISOString(),
+      windowEnd.toISOString(),
+      timezone,
     ],
-    // An optional, disconnected provider is a setup state, not an event error.
-    enabled: showGoogle && googleReady,
     queryFn: ({ signal }) =>
-      api<
-        {
-          id: string;
-          summary?: string;
-          description?: string;
-          htmlLink?: string;
-          start?: { dateTime?: string; date?: string };
-          end?: { dateTime?: string; date?: string };
-        }[]
-      >(
-        `/calendar/google/events?start=${encodeURIComponent(windowStart)}&end=${encodeURIComponent(windowEnd)}`,
+      loadCalendarEvents(queryStart, windowEnd, timezone, signal),
+  });
+  const notifications = useQuery({
+    queryKey: ["notifications", "unread"],
+    queryFn: ({ signal }) =>
+      api<{ items: NotificationItem[]; unread: number }>(
+        "/notifications?status=unread",
         { signal },
       ),
+    refetchInterval: 60_000,
   });
-  const activeQuery = showGoogle ? google : query;
-  const calendarRecords: RecordItem[] = showGoogle
-    ? (google.data || []).map((event) => ({
-        id: event.id,
-        title: event.summary || t("Untitled event"),
-        content: event.description,
-        start_at: event.start?.dateTime || event.start?.date,
-        end_at: event.end?.dateTime || event.end?.date,
-        provider: "google",
-        version: 0,
-        created_at: "",
-        url: event.htmlLink,
-      }))
-    : query.data || [];
-  const agenda = calendarRecords
-    .filter((item) => eventOverlapsDay(item, new Date(selected)))
-    .sort(
-      (a, b) =>
-        (a.start_at ? calendarDate(a.start_at).getTime() : 0) -
-          (b.start_at ? calendarDate(b.start_at).getTime() : 0) ||
-        a.id.localeCompare(b.id),
+  const visible = new Set(
+    calendarList.filter((item) => item.visible).map((item) => item.id),
+  );
+  const records = (events.data || []).filter(
+    (item) =>
+      !item.calendar_id ||
+      !calendarList.length ||
+      visible.has(item.calendar_id),
+  );
+  const agenda = sortEvents(
+    records.filter((item) => eventOverlapsDay(item, selected)),
+  );
+  const unread = notifications.data?.unread || 0;
+  const reminders = notifications.data?.items || [];
+  function colorOf(item: CalendarEvent) {
+    return calendarColorVar(
+      calendarList.find((calendar) => calendar.id === item.calendar_id)
+        ?.color || "blue",
     );
-  function selectMonth(value: Date) {
-    setMonth(value);
-    setSelected(value.toDateString());
   }
-  async function connect() {
-    await action.run(async () => {
-      const result = await api<{ authorization_url: string }>(
-        "/calendar/oauth/start",
-      );
-      window.location.assign(result.authorization_url);
+  function focusDay(day: Date) {
+    setCursor(day);
+    setSelected(day);
+  }
+  function shiftPeriod(step: number) {
+    const next =
+      view === "month"
+        ? addMonths(cursor, step)
+        : view === "week"
+          ? addDays(cursor, step * 7)
+          : addDays(cursor, step);
+    setCursor(next);
+    if (view === "day") setSelected(next);
+  }
+  function changeView(next: CalendarView) {
+    setView(next);
+    setBellOpen(false);
+    if (next === "day") setSelected(cursor);
+  }
+  function createEvent(day: Date, from = 9 * 60, to = 10 * 60) {
+    setPopover(undefined);
+    setSelected(startOfDay(day));
+    setEditor({ start: atMinutes(day, from), end: atMinutes(day, to) });
+  }
+  function openEvent(item: CalendarEvent, event: { clientX: number; clientY: number }) {
+    setPopover({ item, x: event.clientX, y: event.clientY });
+  }
+  async function removeEvent(item: CalendarEvent, scope: EventScope) {
+    const params = new URLSearchParams({ scope });
+    if (scope !== "all" && item.occurrence_start)
+      params.set("occurrence_start", item.occurrence_start);
+    await api(`/events/${item.id}?${params.toString()}`, { method: "DELETE" });
+  }
+  function askDelete(item: CalendarEvent) {
+    setPopover(undefined);
+    if (item.recurring) {
+      setScopeTarget(item);
+      return;
+    }
+    if (!confirm(t("Delete “{title}”?", { title: item.title || "" }))) return;
+    void action.run(() => removeEvent(item, "all"));
+  }
+  async function removeCalendar(item: CalendarItem, moveTo?: string) {
+    await api(
+      `/calendars/${item.id}${moveTo ? `?move_to=${encodeURIComponent(moveTo)}` : ""}`,
+      { method: "DELETE" },
+    );
+  }
+  function askDeleteCalendar(item: CalendarItem) {
+    if (item.is_default) {
+      alert(t("The default calendar can’t be deleted."));
+      return;
+    }
+    if (!confirm(t("Delete the “{name}” calendar?", { name: item.name })))
+      return;
+    void action.run(async () => {
+      try {
+        await removeCalendar(item);
+      } catch (error) {
+        const target = calendarList.find(
+          (calendar) => calendar.id !== item.id,
+        );
+        if (error instanceof ApiError && error.status === 409 && target) {
+          setMoveTarget({ item, to: target.id });
+          return;
+        }
+        throw error;
+      }
     });
   }
+  const periodLabel =
+    view === "month"
+      ? cursor.toLocaleDateString(locale, { month: "long", year: "numeric" })
+      : view === "week"
+        ? `${days[0].toLocaleDateString(locale, { month: "short", day: "numeric" })} – ${days[6].toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" })}`
+        : cursor.toLocaleDateString(locale, {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric",
+          });
   return (
     <>
       <PageHeader
         eyebrow={t("TIME, THOUGHTFULLY SPENT")}
         title={t("Make room in your day.")}
         subtitle={t("A little structure, a little breathing room.")}
-      >
-        <Link href="/integrations" className="text-link">
-          <Network size={15} /> {t("Optional calendar connections")}
-        </Link>
-        <Button onClick={() => setEdit("new")}>
-          <Plus size={16} /> {t("New event")}{" "}
-        </Button>
-      </PageHeader>
-      <div className="toolbar">
-        <div className="tabs">
-          <button
-            className={!showGoogle ? "selected" : ""}
-            onClick={() => setShowGoogle(false)}
-          >
-            {t("PersonalOS calendar")}{" "}
-          </button>
-          <button
-            className={showGoogle ? "selected" : ""}
-            onClick={() => setShowGoogle(true)}
-          >
-            {t("Google Calendar")}{" "}
-          </button>
-        </div>
-        <span className="small-text">
-          {showGoogle
-            ? t("Live provider events · OAuth required")
-            : t("Local workspace events · No Google account needed")}
-        </span>
-      </div>
-      <Failure
-        error={
-          showGoogle
-            ? connectionError || (googleReady ? google.error : null)
-            : query.error
-        }
-        retry={() => {
-          if (showGoogle && connectionError) {
-            void configuration.refetch();
-          } else void activeQuery.refetch();
-        }}
       />
-      <ErrorText text={action.error} />
-      {googleUnavailable ? (
-        <section className="panel">
-          {connectionPending ? (
-            <Loading />
-          ) : connectionError ? (
-            <p className="field-note">
-              {t("Calendar connection status could not be loaded.")}
-            </p>
-          ) : (
-            <Empty
-              icon={<CalendarDays size={26} />}
-              title={t("Google Calendar is optional.")}
-              text={t(
-                "Your PersonalOS calendar works on its own. Connect Google only if you want to view and manage an existing Google calendar.",
-              )}
-              action={
-                <div className="heading-actions">
-                  <Button
-                    variant="secondary"
-                    onClick={() => setShowGoogle(false)}
-                  >
-                    {t("Use PersonalOS calendar")}
-                  </Button>
-                  {configuration.data?.google_oauth_configured === true ? (
-                    <Button
-                      onClick={() => void connect()}
-                      disabled={action.pending}
-                    >
-                      <Network size={15} /> {t("Connect Google Calendar")}
-                    </Button>
-                  ) : (
-                    <Link href="/integrations" className="text-link">
-                      {t("View optional connections")}
-                    </Link>
-                  )}
-                </div>
-              }
-            />
+      <div className={`cal-shell${drawerOpen ? " is-sidebar-open" : ""}`}>
+        <CalendarSidebar
+          cursor={cursor}
+          selected={selected}
+          now={now}
+          calendars={calendarList}
+          error={calendars.error}
+          onFocus={focusDay}
+          onToggle={(item) => {
+            void action.run(() =>
+              api(`/calendars/${item.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ visible: !item.visible }),
+              }),
+            );
+          }}
+          onCreate={(name, color) =>
+            action.run(() =>
+              api("/calendars", {
+                method: "POST",
+                body: JSON.stringify({ name, color }),
+              }),
+            )
+          }
+          onUpdate={(item, patch) =>
+            action.run(() =>
+              api(`/calendars/${item.id}`, {
+                method: "PATCH",
+                body: JSON.stringify(patch),
+              }),
+            )
+          }
+          onDelete={askDeleteCalendar}
+        />
+        <div className="cal-main">
+          <div className="cal-toolbar">
+            <button
+              type="button"
+              className="cal-nav-btn cal-sidebar-toggle"
+              aria-label={t("Calendars")}
+              aria-expanded={drawerOpen}
+              onClick={() => setDrawerOpen(!drawerOpen)}
+            >
+              <Menu size={17} />
+            </button>
+            <h2 className="cal-title">{periodLabel}</h2>
+            <div className="cal-nav">
+              <button
+                type="button"
+                className="cal-nav-btn"
+                aria-label={t("Previous")}
+                onClick={() => shiftPeriod(-1)}
+              >
+                <ChevronLeft size={17} />
+              </button>
+              <button
+                type="button"
+                className="cal-nav-today"
+                onClick={() => focusDay(new Date())}
+              >
+                {t("Today")}
+              </button>
+              <button
+                type="button"
+                className="cal-nav-btn"
+                aria-label={t("Next")}
+                onClick={() => shiftPeriod(1)}
+              >
+                <ChevronRight size={17} />
+              </button>
+            </div>
+            <div className="cal-segmented">
+              {calendarViews.map(([value, label]) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={view === value ? "is-active" : ""}
+                  aria-pressed={view === value}
+                  onClick={() => changeView(value)}
+                >
+                  {t(label)}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="cal-bell"
+              ref={bellRef}
+              aria-label={t("Reminders")}
+              aria-expanded={bellOpen}
+              onClick={() => setBellOpen(!bellOpen)}
+            >
+              <Bell size={17} />
+              {unread > 0 && <span className="cal-bell-count">{unread}</span>}
+            </button>
+            {bellOpen && (
+              <NotificationPanel
+                items={reminders}
+                unread={unread}
+                pending={action.pending}
+                error={notifications.error}
+                panelRef={bellPanelRef}
+                onRead={(item) => {
+                  void action.run(() =>
+                    api(`/notifications/${item.id}/read`, { method: "POST" }),
+                  );
+                }}
+                onReadAll={() => {
+                  void action.run(() =>
+                    api("/notifications/read-all", { method: "POST" }),
+                  );
+                }}
+              />
+            )}
+            <button
+              type="button"
+              className="cal-new"
+              onClick={() => createEvent(selected)}
+            >
+              <Plus size={15} /> {t("New event")}
+            </button>
+          </div>
+          {events.error && (
+            <div className="error-banner" role="alert">
+              <span>{t("Calendar events could not be loaded.")}</span>
+              <button
+                onClick={() => {
+                  void events.refetch();
+                }}
+              >
+                {t("Try again")} <RefreshCw size={13} />
+              </button>
+            </div>
           )}
-        </section>
-      ) : (
-        <div className="calendar-layout">
-          <section className="panel calendar-panel">
-            <div className="calendar-controls">
-              <h2>
-                {month.toLocaleDateString(locale, {
-                  month: "long",
-                  year: "numeric",
-                })}
-              </h2>
-              <div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => selectMonth(new Date())}
-                >
-                  {t("Today")}{" "}
-                </Button>
-                <button
-                  className="icon-button"
-                  aria-label={t("Previous month")}
-                  onClick={() =>
-                    selectMonth(
-                      new Date(month.getFullYear(), month.getMonth() - 1, 1),
-                    )
-                  }
-                >
-                  <ChevronLeft size={19} />
-                </button>
-                <button
-                  className="icon-button"
-                  aria-label={t("Next month")}
-                  onClick={() =>
-                    selectMonth(
-                      new Date(month.getFullYear(), month.getMonth() + 1, 1),
-                    )
-                  }
-                >
-                  <ChevronRight size={19} />
-                </button>
-              </div>
-            </div>
-            <div className="calendar-weekdays">
-              {Array.from({ length: 7 }, (_, index) => {
-                const day = new Date(2024, 0, index + 1);
-                return (
-                  <span key={index}>
-                    {day.toLocaleDateString(locale, { weekday: "short" })}
-                  </span>
-                );
-              })}
-            </div>
-            {activeQuery.isPending ? (
+          <ErrorText text={action.error} />
+          <div className="cal-body">
+            {events.isPending ? (
               <Loading />
-            ) : activeQuery.error ? (
+            ) : events.error ? (
               <p className="field-note">
                 {t("Calendar events could not be loaded.")}
               </p>
+            ) : view === "month" ? (
+              <MonthView
+                cursor={cursor}
+                days={days}
+                selected={selected}
+                now={now}
+                records={records}
+                colorOf={colorOf}
+                onFocus={focusDay}
+                onOpen={openEvent}
+                onCreate={(day) => createEvent(day)}
+              />
             ) : (
-              <div className="calendar-days">
-                {days.map((day) => {
-                  const events = calendarRecords.filter((event) =>
-                    eventOverlapsDay(event, day),
-                  );
-                  return (
-                    <button
-                      key={day.toISOString()}
-                      className={`calendar-day ${day.getMonth() !== month.getMonth() ? "other-month" : ""} ${selected === day.toDateString() ? "selected-day" : ""} ${day.toDateString() === new Date().toDateString() ? "current-day" : ""}`}
-                      onClick={() => setSelected(day.toDateString())}
-                    >
-                      <span>{day.getDate()}</span>
-                      {events.slice(0, 2).map((e) => (
-                        <small key={e.id}>{e.title}</small>
-                      ))}
-                      {events.length > 2 && (
-                        <em>
-                          {t("+{count} more", { count: events.length - 2 })}
-                        </em>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+              <TimeGridView
+                days={days}
+                now={now}
+                locale={locale}
+                timeText={timeLabel}
+                records={records}
+                colorOf={colorOf}
+                onOpen={openEvent}
+                onCreate={createEvent}
+              />
             )}
-          </section>
+          </div>
           <section className="panel day-agenda">
             <span className="eyebrow">{t("YOUR DAY")}</span>
             <h2>
-              {new Date(selected).toLocaleDateString(locale, {
+              {selected.toLocaleDateString(locale, {
                 weekday: "long",
                 month: "short",
                 day: "numeric",
               })}
             </h2>
-            {activeQuery.isPending ? (
+            {events.isPending ? (
               <Loading />
-            ) : activeQuery.error ? (
+            ) : events.error ? (
               <p className="field-note">
                 {t("Calendar events could not be loaded.")}
               </p>
             ) : agenda.length ? (
               agenda.map((item) => (
-                <article className="event-card" key={item.id}>
+                <article className="event-card" key={eventKey(item)}>
                   <span className="eyebrow">
-                    {item.start_at &&
-                    /^\d{4}-\d{2}-\d{2}$/.test(item.start_at) ? (
+                    {item.all_day ? (
                       t("All day")
                     ) : (
                       <>
@@ -1394,67 +1693,10 @@ export function CalendarPage() {
                   <h3>{item.title}</h3>
                   <p>{item.content}</p>
                   <Badge status={item.provider || "local"} />
-                  {item.provider === "google" && (
-                    <a
-                      className="text-link"
-                      href={item.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {t("Open in Google Calendar")} <ArrowUpRight size={13} />
-                    </a>
-                  )}
                   <RowActions
-                    onEdit={() => setEdit(item)}
-                    onDelete={() => {
-                      if (
-                        confirm(
-                          t("Delete “{title}”?", { title: item.title || "" }),
-                        )
-                      )
-                        void action.run(async () => {
-                          if (item.provider === "google") {
-                            await api(
-                              `/calendar/google/events/${encodeURIComponent(item.id)}`,
-                              { method: "DELETE" },
-                            );
-                            alert(
-                              t(
-                                "Google Calendar deletion is awaiting your approval in Activity & approvals.",
-                              ),
-                            );
-                          } else await remove("calendar", item, t);
-                        });
-                    }}
+                    onEdit={() => setEditor({ item })}
+                    onDelete={() => askDelete(item)}
                   />
-                  {item.provider === "google" && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        if (
-                          confirm(
-                            t(
-                              "Request undo for this external event? A deletion approval will be created.",
-                            ),
-                          )
-                        )
-                          void action.run(async () => {
-                            await api(
-                              `/calendar/google/events/${encodeURIComponent(item.id)}/undo`,
-                              { method: "POST" },
-                            );
-                            alert(
-                              t(
-                                "Undo request is awaiting approval in Activity & approvals.",
-                              ),
-                            );
-                          });
-                      }}
-                    >
-                      <RefreshCw size={12} /> {t("Request undo")}{" "}
-                    </Button>
-                  )}
                 </article>
               ))
             ) : (
@@ -1468,32 +1710,908 @@ export function CalendarPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setEdit("new")}
+                    onClick={() => createEvent(selected)}
                   >
-                    <Plus size={14} /> {t("Add event")}{" "}
+                    <Plus size={14} /> {t("Add event")}
                   </Button>
                 }
               />
             )}
           </section>
         </div>
-      )}
-      <div className="subtle-tip">
-        <ShieldCheck size={15} />{" "}
-        {t(
-          "Connected calendar writes require approval. Local events stay in your workspace.",
-        )}{" "}
       </div>
-      {edit && (
+      {popover && (
+        <EventPopover
+          item={popover.item}
+          point={popover}
+          date={dateLabel(popover.item.start_at, {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+          })}
+          color={colorOf(popover.item)}
+          timeText={timeLabel}
+          onClose={() => setPopover(undefined)}
+          onEdit={() => {
+            setEditor({ item: popover.item });
+            setPopover(undefined);
+          }}
+          onDelete={() => askDelete(popover.item)}
+        />
+      )}
+      {scopeTarget && (
+        <div className="modal-overlay">
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="calendar-scope-title"
+          >
+            <div className="modal-head">
+              <div>
+                <span className="eyebrow">{t("REPEATING EVENT")}</span>
+                <h2 id="calendar-scope-title">
+                  {t("This event repeats. Choose which events to delete.")}
+                </h2>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={t("Close")}
+                onClick={() => setScopeTarget(undefined)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <p>
+              {scopeTarget.title} ·{" "}
+              {dateLabel(scopeTarget.occurrence_start || scopeTarget.start_at)}
+            </p>
+            <ErrorText text={action.error} />
+            <div className="modal-actions">
+              {eventScopes.map(([scope, label]) => (
+                <Button
+                  key={scope}
+                  variant={scope === "all" ? "ghost" : "secondary"}
+                  className={scope === "all" ? "cal-pop-danger" : undefined}
+                  disabled={action.pending}
+                  onClick={() => {
+                    void action.run(async () => {
+                      await removeEvent(scopeTarget, scope);
+                      setScopeTarget(undefined);
+                    });
+                  }}
+                >
+                  {t(label)}
+                </Button>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
+      {moveTarget && (
+        <div className="modal-overlay">
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="calendar-move-title"
+          >
+            <div className="modal-head">
+              <div>
+                <span className="eyebrow">{t("MOVE EVENTS")}</span>
+                <h2 id="calendar-move-title">
+                  {t("“{name}” still has events.", {
+                    name: moveTarget.item.name,
+                  })}
+                </h2>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={t("Close")}
+                onClick={() => setMoveTarget(undefined)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <label>
+              {t("Move events to")}{" "}
+              <select
+                value={moveTarget.to}
+                onChange={(event) =>
+                  setMoveTarget({ ...moveTarget, to: event.target.value })
+                }
+              >
+                {calendarList
+                  .filter((calendar) => calendar.id !== moveTarget.item.id)
+                  .map((calendar) => (
+                    <option value={calendar.id} key={calendar.id}>
+                      {calendar.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <ErrorText text={action.error} />
+            <div className="modal-actions">
+              <Button variant="ghost" onClick={() => setMoveTarget(undefined)}>
+                {t("Cancel")}
+              </Button>
+              <Button
+                disabled={action.pending}
+                onClick={() => {
+                  void action.run(async () => {
+                    await removeCalendar(moveTarget.item, moveTarget.to);
+                    setMoveTarget(undefined);
+                  });
+                }}
+              >
+                <Trash2 size={15} /> {t("Move and delete")}
+              </Button>
+            </div>
+          </section>
+        </div>
+      )}
+      {editor && (
         <ResourceEditor
           kind="calendar"
-          item={edit === "new" ? undefined : edit}
-          onClose={() => setEdit(undefined)}
+          item={editor.item}
+          initial={
+            editor.start && editor.end
+              ? {
+                  start_at: editor.start.toISOString(),
+                  end_at: editor.end.toISOString(),
+                  calendar_id:
+                    calendarList.find((calendar) => calendar.is_default)?.id ||
+                    calendarList[0]?.id,
+                }
+              : undefined
+          }
+          onClose={() => setEditor(undefined)}
         />
       )}
     </>
   );
 }
+
+function ColorSwatches({
+  value,
+  onChange,
+}: {
+  value: CalendarColor;
+  onChange: (color: CalendarColor) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <span style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+      {calendarPalette.map((color) => (
+        <button
+          type="button"
+          key={color}
+          className="cal-dot"
+          aria-label={t(calendarColorLabels[color])}
+          aria-pressed={value === color}
+          style={
+            {
+              "--cal-color": calendarColorVar(color),
+              width: "14px",
+              height: "14px",
+              padding: "0",
+              border: "0",
+              borderRadius: "50%",
+              outline: value === color ? "2px solid var(--cal-color)" : "none",
+              outlineOffset: "2px",
+              cursor: "pointer",
+            } as CSSProperties
+          }
+          onClick={() => onChange(color)}
+        />
+      ))}
+    </span>
+  );
+}
+
+function CalendarSidebar({
+  cursor,
+  selected,
+  now,
+  calendars,
+  error,
+  onFocus,
+  onToggle,
+  onCreate,
+  onUpdate,
+  onDelete,
+}: {
+  cursor: Date;
+  selected: Date;
+  now: Date;
+  calendars: CalendarItem[];
+  error: Error | null;
+  onFocus: (day: Date) => void;
+  onToggle: (item: CalendarItem) => void;
+  onCreate: (name: string, color: CalendarColor) => Promise<boolean>;
+  onUpdate: (
+    item: CalendarItem,
+    patch: { name?: string; color?: CalendarColor },
+  ) => Promise<boolean>;
+  onDelete: (item: CalendarItem) => void;
+}) {
+  const { t, locale } = useI18n();
+  const [editing, setEditing] = useState<string>();
+  const [adding, setAdding] = useState(false);
+  const [color, setColor] = useState<CalendarColor>("blue");
+  const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  const gridStart = startOfWeek(first);
+  const grid = Array.from({ length: 42 }, (_, index) =>
+    addDays(gridStart, index),
+  );
+  return (
+    <aside className="cal-sidebar">
+      <div className="cal-mini">
+        <div className="cal-mini-head">
+          <button
+            type="button"
+            className="cal-nav-btn"
+            aria-label={t("Previous month")}
+            onClick={() => onFocus(addMonths(cursor, -1))}
+          >
+            <ChevronLeft size={15} />
+          </button>
+          <span>
+            {cursor.toLocaleDateString(locale, {
+              month: "long",
+              year: "numeric",
+            })}
+          </span>
+          <button
+            type="button"
+            className="cal-nav-btn"
+            aria-label={t("Next month")}
+            onClick={() => onFocus(addMonths(cursor, 1))}
+          >
+            <ChevronRight size={15} />
+          </button>
+        </div>
+        <div className="cal-mini-grid">
+          {grid.slice(0, 7).map((day) => (
+            <span key={day.toISOString()}>
+              {day.toLocaleDateString(locale, { weekday: "narrow" })}
+            </span>
+          ))}
+          {grid.map((day) => (
+            <button
+              type="button"
+              key={day.toISOString()}
+              className={`cal-mini-cell${sameDay(day, now) ? " is-today" : ""}${day.getMonth() !== cursor.getMonth() ? " is-outside" : ""}${sameDay(day, selected) ? " is-selected" : ""}`}
+              onClick={() => onFocus(day)}
+            >
+              {day.getDate()}
+            </button>
+          ))}
+        </div>
+      </div>
+      {error && (
+        <p className="field-note">{t("Calendars could not be loaded.")}</p>
+      )}
+      <div className="cal-lists">
+        {calendars.map((item) =>
+          editing === item.id ? (
+            <form
+              className="cal-list-item"
+              key={item.id}
+              style={{ flexWrap: "wrap" }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                void onUpdate(item, {
+                  name: String(data.get("name") || "").trim(),
+                  color,
+                }).then((ok) => {
+                  if (ok) setEditing(undefined);
+                });
+              }}
+            >
+              <input
+                name="name"
+                defaultValue={item.name}
+                aria-label={t("Calendar name")}
+                style={calendarNameInputStyle}
+                required
+                maxLength={120}
+              />
+              <ColorSwatches value={color} onChange={setColor} />
+              <span className="cal-list-actions">
+                <button
+                  type="submit"
+                  className="icon-button"
+                  aria-label={t("Save changes")}
+                >
+                  <Check size={15} />
+                </button>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={t("Cancel")}
+                  onClick={() => setEditing(undefined)}
+                >
+                  <X size={15} />
+                </button>
+              </span>
+            </form>
+          ) : (
+            <div
+              className={`cal-list-item${item.visible ? "" : " is-off"}`}
+              key={item.id}
+            >
+              <input
+                type="checkbox"
+                checked={item.visible}
+                aria-label={item.name}
+                style={{ accentColor: calendarColorVar(item.color) }}
+                onChange={() => onToggle(item)}
+              />
+              <span
+                className="cal-dot"
+                style={{ "--cal-color": calendarColorVar(item.color) } as CSSProperties}
+              />
+              <span className="cal-list-name">{item.name}</span>
+              <span className="cal-list-actions">
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={t("Edit")}
+                  onClick={() => {
+                    setEditing(item.id);
+                    setColor(item.color);
+                  }}
+                >
+                  <Edit3 size={14} />
+                </button>
+                {!item.is_default && (
+                  <button
+                    type="button"
+                    className="icon-button delete"
+                    aria-label={t("Delete")}
+                    onClick={() => onDelete(item)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </span>
+            </div>
+          ),
+        )}
+        {adding ? (
+          <form
+            className="cal-list-item"
+            style={{ flexWrap: "wrap" }}
+            onSubmit={(event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              const name = String(data.get("name") || "").trim();
+              if (!name) return;
+              void onCreate(name, color).then((ok) => {
+                if (ok) setAdding(false);
+              });
+            }}
+          >
+            <input
+              name="name"
+              aria-label={t("Calendar name")}
+              placeholder={t("Calendar name")}
+              style={calendarNameInputStyle}
+              autoFocus
+              required
+              maxLength={120}
+            />
+            <ColorSwatches value={color} onChange={setColor} />
+            <span className="cal-list-actions">
+              <button
+                type="submit"
+                className="icon-button"
+                aria-label={t("Add calendar")}
+              >
+                <Check size={15} />
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={t("Cancel")}
+                onClick={() => setAdding(false)}
+              >
+                <X size={15} />
+              </button>
+            </span>
+          </form>
+        ) : (
+          <button
+            type="button"
+            className="cal-list-add"
+            onClick={() => {
+              setAdding(true);
+              setColor("blue");
+            }}
+          >
+            <Plus size={14} /> {t("New calendar")}
+          </button>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function NotificationPanel({
+  items,
+  unread,
+  pending,
+  error,
+  panelRef,
+  onRead,
+  onReadAll,
+}: {
+  items: NotificationItem[];
+  unread: number;
+  pending: boolean;
+  error: Error | null;
+  panelRef: React.Ref<HTMLDivElement>;
+  onRead: (item: NotificationItem) => void;
+  onReadAll: () => void;
+}) {
+  const { t, timeLabel } = useI18n();
+  return (
+    <div
+      className="cal-bell-panel"
+      ref={panelRef}
+      role="dialog"
+      aria-label={t("Reminders")}
+    >
+      <div className="cal-pop-head">
+        <h2>{t("Reminders")}</h2>
+        {unread > 0 && (
+          <Button size="sm" variant="ghost" disabled={pending} onClick={onReadAll}>
+            {t("Mark all as read")}
+          </Button>
+        )}
+      </div>
+      <Failure error={error} />
+      {items.length ? (
+        items.map((item) => (
+          <div
+            className={`cal-notif${item.status === "unread" ? " is-unread" : ""}`}
+            key={item.id}
+          >
+            <strong>{item.title}</strong>
+            {item.body && <p>{item.body}</p>}
+            <small>{timeLabel(item.due_at)}</small>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t("Mark as read")}
+              onClick={() => onRead(item)}
+            >
+              <Check size={14} />
+            </button>
+          </div>
+        ))
+      ) : (
+        <p className="field-note">{t("No unread reminders.")}</p>
+      )}
+    </div>
+  );
+}
+
+function EventPopover({
+  item,
+  point,
+  date,
+  color,
+  timeText,
+  onClose,
+  onEdit,
+  onDelete,
+}: {
+  item: CalendarEvent;
+  point: { x: number; y: number };
+  date: string;
+  color: string;
+  timeText: (value?: string) => string;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { t } = useI18n();
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function down(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) onClose();
+    }
+    function key(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("mousedown", down);
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("mousedown", down);
+      window.removeEventListener("keydown", key);
+    };
+  }, [onClose]);
+  const width = 288;
+  const viewportWidth = typeof window === "undefined" ? 1024 : window.innerWidth;
+  const viewportHeight =
+    typeof window === "undefined" ? 768 : window.innerHeight;
+  const left = Math.max(12, Math.min(point.x, viewportWidth - width - 12));
+  const top = Math.max(12, Math.min(point.y + 8, viewportHeight - 260));
+  return (
+    <div
+      className="cal-pop"
+      ref={ref}
+      role="dialog"
+      aria-modal="false"
+      aria-label={t("Event details")}
+      style={{ position: "fixed", top, left, width, maxWidth: "calc(100vw - 24px)" }}
+    >
+      <div className="cal-pop-head">
+        <span className="cal-dot" style={{ "--cal-color": color } as CSSProperties} />
+        <h2>{item.title || t("Untitled event")}</h2>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={t("Close")}
+          onClick={onClose}
+        >
+          <X size={16} />
+        </button>
+      </div>
+      <div className="cal-pop-meta">
+        <span>{date}</span>
+        <span>
+          {item.all_day
+            ? t("All day")
+            : `${timeText(item.start_at)} — ${timeText(item.end_at)}`}
+        </span>
+        {item.location && <span>{item.location}</span>}
+        {item.recurring && <span>{t(repeatLabel(item.rrule))}</span>}
+        {item.content && <p>{item.content}</p>}
+      </div>
+      <div className="cal-pop-actions">
+        <Button size="sm" variant="secondary" onClick={onEdit}>
+          {t("Edit")}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="cal-pop-danger"
+          onClick={onDelete}
+        >
+          {t("Delete")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function MonthView({
+  cursor,
+  days,
+  selected,
+  now,
+  records,
+  colorOf,
+  onFocus,
+  onOpen,
+  onCreate,
+}: {
+  cursor: Date;
+  days: Date[];
+  selected: Date;
+  now: Date;
+  records: CalendarEvent[];
+  colorOf: (item: CalendarEvent) => string;
+  onFocus: (day: Date) => void;
+  onOpen: (item: CalendarEvent, event: { clientX: number; clientY: number }) => void;
+  onCreate: (day: Date) => void;
+}) {
+  const { t, locale, timeLabel } = useI18n();
+  const firstDay = days[0];
+  return (
+    <section className="cal-month">
+      <div className="cal-month-head">
+        {Array.from({ length: 7 }, (_, index) => addDays(firstDay, index)).map(
+          (day) => (
+            <span key={day.toISOString()}>
+              {day.toLocaleDateString(locale, { weekday: "short" })}
+            </span>
+          ),
+        )}
+      </div>
+      <div className="cal-month-grid">
+        {days.map((day) => {
+          const dayEvents = sortEvents(
+            records.filter((item) => eventOverlapsDay(item, day)),
+          );
+          return (
+            <div
+              key={day.toISOString()}
+              className={`cal-month-cell${day.getMonth() !== cursor.getMonth() ? " is-other-month" : ""}${sameDay(day, now) ? " is-today" : ""}${sameDay(day, selected) ? " is-selected" : ""}`}
+              onClick={(event) => {
+                if (event.target === event.currentTarget) onCreate(day);
+              }}
+            >
+              <button
+                type="button"
+                className="cal-day-number"
+                onClick={() => onFocus(day)}
+              >
+                {day.getDate()}
+              </button>
+              {dayEvents.slice(0, 3).map((item) => (
+                <button
+                  type="button"
+                  key={eventKey(item)}
+                  className="cal-chip"
+                  style={{ "--cal-color": colorOf(item) } as CSSProperties}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpen(item, event);
+                  }}
+                >
+                  {item.all_day ? null : <span>{timeLabel(item.start_at)}</span>}
+                  <strong>{item.title || t("Untitled event")}</strong>
+                </button>
+              ))}
+              {dayEvents.length > 3 && (
+                <button
+                  type="button"
+                  className="cal-chip-more"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onFocus(day);
+                  }}
+                >
+                  {t("+{count} more", { count: dayEvents.length - 3 })}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function TimeGridView({
+  days,
+  now,
+  locale,
+  timeText,
+  records,
+  colorOf,
+  onOpen,
+  onCreate,
+}: {
+  days: Date[];
+  now: Date;
+  locale: string;
+  timeText: (value?: string) => string;
+  records: CalendarEvent[];
+  colorOf: (item: CalendarEvent) => string;
+  onOpen: (item: CalendarEvent, event: { clientX: number; clientY: number }) => void;
+  onCreate: (day: Date, from: number, to: number) => void;
+}) {
+  const { t } = useI18n();
+  const origin = useRef<
+    { day: number; top: number; y: number; minute: number } | undefined
+  >(undefined);
+  const [drag, setDrag] = useState<{
+    day: number;
+    from: number;
+    to: number;
+    moved: boolean;
+  }>();
+  const latest = useRef<
+    | { day: number; from: number; to: number; moved: boolean }
+    | undefined
+  >(undefined);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const rangeRef = useRef({ days, now });
+  useEffect(() => {
+    rangeRef.current = { days, now };
+  });
+  // Park the viewport on the current hour (or 08:00) whenever the day range
+  // changes, so the grid never opens on an empty 00:00–08:00 stretch.
+  const rangeKey = `${days[0].toISOString()}:${days.length}`;
+  useEffect(() => {
+    const box = scrollRef.current;
+    if (!box) return;
+    const current = rangeRef.current;
+    const hoursToday = current.days.findIndex((day) => sameDay(day, current.now));
+    const anchor =
+      hoursToday >= 0
+        ? Math.max(0, current.now.getHours() - 1) * 60
+        : 8 * 60;
+    box.scrollTop = (anchor / 60) * HOUR_HEIGHT;
+  }, [rangeKey]);
+  useEffect(() => {
+    if (!drag) return;
+    function move(event: PointerEvent) {
+      const start = origin.current;
+      if (!start) return;
+      const minute = snapMinutes(
+        ((event.clientY - start.top) / HOUR_HEIGHT) * 60,
+      );
+      const next = {
+        day: start.day,
+        from: Math.min(start.minute, minute),
+        to: Math.max(start.minute, minute),
+        moved: latest.current?.moved === true || Math.abs(event.clientY - start.y) > 4,
+      };
+      latest.current = next;
+      setDrag(next);
+    }
+    function up() {
+      const start = origin.current;
+      const current = latest.current;
+      origin.current = undefined;
+      latest.current = undefined;
+      setDrag(undefined);
+      if (!start) return;
+      const day = days[Math.min(start.day, days.length - 1)];
+      if (current?.moved && current.to - current.from >= SNAP_MINUTES)
+        onCreate(day, current.from, current.to);
+      else onCreate(day, start.minute, start.minute + 30);
+    }
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+  }, [drag, days, onCreate]);
+  const columns = days.length;
+  const todayIndex = days.findIndex((day) => sameDay(day, now));
+  const nowTop = ((now.getHours() * 60 + now.getMinutes()) / 60) * HOUR_HEIGHT;
+  function begin(day: number, event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const minute = snapMinutes(((event.clientY - rect.top) / HOUR_HEIGHT) * 60);
+    origin.current = {
+      day,
+      top: rect.top,
+      y: event.clientY,
+      minute: Math.min(minute, 24 * 60 - SNAP_MINUTES),
+    };
+    latest.current = { day, from: minute, to: minute, moved: false };
+    setDrag({ day, from: minute, to: minute, moved: false });
+  }
+  const hours = Array.from({ length: 24 }, (_, hour) => hour);
+  return (
+    <section className="cal-timegrid">
+      <div className="cal-timegrid-head">
+        <span />
+        {days.map((day) => (
+          <div
+            key={day.toISOString()}
+            className={sameDay(day, now) ? "is-today" : ""}
+          >
+            <span>{day.toLocaleDateString(locale, { weekday: "short" })}</span>
+            <strong>{day.getDate()}</strong>
+          </div>
+        ))}
+      </div>
+      <div className="cal-allday-row">
+        <span>{t("All day")}</span>
+        {days.map((day) => (
+          <div key={day.toISOString()}>
+            {sortEvents(
+              records.filter(
+                (item) => item.all_day && eventOverlapsDay(item, day),
+              ),
+            ).map((item) => (
+              <button
+                type="button"
+                key={eventKey(item)}
+                className="cal-allday-chip"
+                style={{ "--cal-color": colorOf(item) } as CSSProperties}
+                onClick={(event) => onOpen(item, event)}
+              >
+                {item.title || t("Untitled event")}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="cal-scroll" ref={scrollRef}>
+        <div className="cal-gutter">
+          {hours.map((hour) => (
+            <div
+              className="cal-gutter-slot"
+              key={hour}
+              style={{ height: `${HOUR_HEIGHT}px` }}
+            >
+              {hour > 0 ? (
+                <span style={{ letterSpacing: 0, whiteSpace: "nowrap" }}>
+                  {hourLabel(hour)}
+                </span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+        {/* The ghost and now-line use column percentages, so this box anchors them. */}
+        <div className="cal-cols" style={{ position: "relative" }}>
+          {days.map((day, index) => (
+            <div
+              className="cal-col"
+              key={day.toISOString()}
+              onPointerDown={(event) => begin(index, event)}
+            >
+              {hours.map((hour) => (
+                <div
+                  className="cal-col-slot"
+                  key={hour}
+                  style={{ height: `${HOUR_HEIGHT}px` }}
+                />
+              ))}
+              {positionEvents(
+                records.filter(
+                  (item) => !item.all_day && eventOverlapsDay(item, day),
+                ),
+                day,
+              ).map((block) => (
+                <button
+                  type="button"
+                  key={eventKey(block.item)}
+                  className={`cal-event-block${block.short ? " is-short" : ""}`}
+                  style={
+                    {
+                      "--cal-color": colorOf(block.item),
+                      top: `${block.top}px`,
+                      height: `${block.height}px`,
+                      left: `calc(${block.left}% + 1px)`,
+                      width: `calc(${block.width}% - 2px)`,
+                    } as CSSProperties
+                  }
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpen(block.item, event);
+                  }}
+                >
+                  <strong>{block.item.title || t("Untitled event")}</strong>
+                  {block.short ? null : (
+                    <span>{timeText(block.item.start_at)}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          ))}
+          {todayIndex >= 0 && (
+            <div
+              className="cal-now-line"
+              style={{
+                top: `${nowTop}px`,
+                left: `${(todayIndex * 100) / columns}%`,
+                width: `${100 / columns}%`,
+              }}
+            />
+          )}
+          {drag?.moved && (
+            <div
+              className="cal-drag-ghost"
+              style={{
+                top: `${(drag.from / 60) * HOUR_HEIGHT}px`,
+                height: `${Math.max(((drag.to - drag.from) / 60) * HOUR_HEIGHT, 12)}px`,
+                left: `${(drag.day * 100) / columns}%`,
+                width: `${100 / columns}%`,
+              }}
+            />
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function AutomationsPage() {
   const { t, dateLabel, timeLabel } = useI18n();
   const query = useRecords("automations");
@@ -1751,14 +2869,6 @@ export function IntegrationsPage() {
       setToolResult(undefined);
     });
   }
-  async function connectCalendar() {
-    await action.run(async () => {
-      const result = await api<{ authorization_url: string }>(
-        "/calendar/oauth/start",
-      );
-      window.location.assign(result.authorization_url);
-    });
-  }
   return (
     <>
       <PageHeader
@@ -1771,38 +2881,6 @@ export function IntegrationsPage() {
         </Button>
       </PageHeader>
       <div className="integration-grid">
-        <section className="panel integration-feature">
-          <div className="integration-brand google-icon">
-            <CalendarDays size={25} />
-          </div>
-          <span className="outline-tag">{t("OAuth 2.0")}</span>
-          <h2>{t("Google Calendar")}</h2>
-          <p>
-            {t(
-              "Bring your schedule into focus. View events, check conflicts, and approve changes before they happen.",
-            )}{" "}
-          </p>
-          <ul>
-            <li>
-              <Check size={14} /> {t("Secure provider authorization")}{" "}
-            </li>
-            <li>
-              <Check size={14} /> {t("No account password shared")}{" "}
-            </li>
-            <li>
-              <Check size={14} /> {t("External writes require approval")}{" "}
-            </li>
-          </ul>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              void connectCalendar();
-            }}
-            disabled={action.pending}
-          >
-            {t("Connect calendar")} <ArrowUpRight size={15} />
-          </Button>
-        </section>
         <section className="panel integration-feature">
           <div className="integration-brand">
             <Network size={25} />
@@ -1852,11 +2930,7 @@ export function IntegrationsPage() {
           query.data.map((item) => (
             <div className="connection-row" key={item.id}>
               <span className="connection-icon">
-                {item.kind === "google_calendar" ? (
-                  <CalendarDays size={20} />
-                ) : (
-                  <Network size={20} />
-                )}
+                <Network size={20} />
               </span>
               <div>
                 <h3>{item.title}</h3>
@@ -1909,33 +2983,6 @@ export function IntegrationsPage() {
                     {item.trusted ? t("Revoke trust") : t("Trust server")}
                   </Button>
                 </>
-              )}
-              {item.kind === "google_calendar" && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    if (
-                      confirm(
-                        t(
-                          "Disconnect Google Calendar and revoke this authorization?",
-                        ),
-                      )
-                    )
-                      void action.run(async () => {
-                        await api(`/integrations/${item.id}/disconnect`, {
-                          method: "POST",
-                        });
-                        alert(
-                          t(
-                            "Disconnection awaits your approval in Activity & approvals.",
-                          ),
-                        );
-                      });
-                  }}
-                >
-                  {t("Disconnect")}{" "}
-                </Button>
               )}
               <button
                 className="icon-button delete"
@@ -3237,14 +4284,19 @@ export function ChatPage() {
 function ResourceEditor({
   kind,
   item,
+  initial,
   onClose,
 }: {
   kind: string;
   item?: RecordItem;
+  initial?: { start_at: string; end_at: string; calendar_id?: string };
   onClose: () => void;
 }) {
   const { t, dateLabel } = useI18n();
   const action = useAction();
+  const calendars = useCalendars(kind === "calendar");
+  const calendarList = calendars.data?.items || [];
+  const [scopeChoice, setScopeChoice] = useState<Record<string, unknown>>();
   const [category, setCategory] = useState(item?.category || "fact");
   const [memoryTopic, setMemoryTopic] = useState(
     typeof item?.extra?.fact_key === "string" ? item.extra.fact_key : "",
@@ -3326,14 +4378,28 @@ function ResourceEditor({
             : {}),
         },
       });
-    if (kind === "calendar")
+    if (kind === "calendar") {
+      const allDay = string("all_day") === "on";
+      const start = new Date(string("start_at"));
+      const end = new Date(string("end_at"));
       Object.assign(body, {
         title: string("title"),
         content: string("content"),
-        start_at: new Date(string("start_at")).toISOString(),
-        end_at: new Date(string("end_at")).toISOString(),
-        provider: item?.provider === "google" ? "google" : string("provider"),
+        start_at: allDay
+          ? startOfDay(start).toISOString()
+          : start.toISOString(),
+        end_at: allDay
+          ? addDays(startOfDay(end > start ? end : start), 1).toISOString()
+          : end.toISOString(),
+        calendar_id: string("calendar_id") || undefined,
+        location: string("location"),
+        all_day: allDay,
+        timezone: browserTimezone(),
+        rrule: string("repeat") || null,
+        reminders: string("reminder") ? [Number(string("reminder"))] : [],
+        provider: "local",
       });
+    }
     if (kind === "automations")
       Object.assign(body, {
         title: string("title"),
@@ -3355,11 +4421,24 @@ function ResourceEditor({
         permissions: [],
       });
     if (item) body.version = item.version;
+    // A recurring event needs an explicit occurrence scope before it is written.
+    if (kind === "calendar" && item?.recurring === true) {
+      setScopeChoice(body);
+      return;
+    }
+    await save(body);
+  }
+  async function save(body: Record<string, unknown>, scope?: EventScope) {
     const ok = await action.run(async () => {
+      const query = new URLSearchParams();
+      if (scope) {
+        query.set("scope", scope);
+        if (scope !== "all" && item?.occurrence_start)
+          query.set("occurrence_start", item.occurrence_start);
+      }
+      const search = query.toString();
       const result = await api<{ approval_required?: boolean }>(
-        kind === "calendar" && item?.provider === "google"
-          ? `/calendar/google/events/${encodeURIComponent(item.id)}`
-          : `${resourcePaths[kind]}${item ? `/${item.id}` : ""}`,
+        `${resourcePaths[kind]}${item ? `/${item.id}${search ? `?${search}` : ""}` : ""}`,
         { method: item ? "PATCH" : "POST", body: JSON.stringify(body) },
       );
       if (result?.approval_required)
@@ -3602,7 +4681,7 @@ function ResourceEditor({
                     name="start_at"
                     type="datetime-local"
                     required
-                    defaultValue={inputDate(item?.start_at)}
+                    defaultValue={inputDate(item?.start_at || initial?.start_at)}
                   />
                 </label>
                 <label>
@@ -3611,30 +4690,84 @@ function ResourceEditor({
                     name="end_at"
                     type="datetime-local"
                     required
-                    defaultValue={inputDate(item?.end_at)}
+                    defaultValue={inputDate(item?.end_at || initial?.end_at)}
+                  />
+                </label>
+              </div>
+              <label className="checkbox-label">
+                <input
+                  name="all_day"
+                  type="checkbox"
+                  defaultChecked={item?.all_day === true}
+                />
+                <span>{t("All day")}</span>
+              </label>
+              {calendarList.length > 0 && (
+                <label>
+                  {t("Calendar")}{" "}
+                  <select
+                    name="calendar_id"
+                    defaultValue={
+                      item?.calendar_id ||
+                      initial?.calendar_id ||
+                      calendarList.find((calendar) => calendar.is_default)?.id ||
+                      calendarList[0]?.id
+                    }
+                  >
+                    {calendarList.map((calendar) => (
+                      <option key={calendar.id} value={calendar.id}>
+                        {calendar.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <div className="form-grid">
+                <label>
+                  {t("Repeat")}{" "}
+                  <select name="repeat" defaultValue={repeatValue(item?.rrule)}>
+                    {repeatRules.map(([value, label]) => (
+                      <option key={value || "none"} value={value}>
+                        {t(label)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  {t("Location")}{" "}
+                  <span className="label-meta">{t("optional")}</span>
+                  <input
+                    name="location"
+                    defaultValue={item?.location || ""}
+                    maxLength={240}
                   />
                 </label>
               </div>
               <label>
-                {t("Calendar")}{" "}
+                {t("Reminder")}{" "}
                 <select
-                  name="provider"
-                  defaultValue={item?.provider || "local"}
+                  name="reminder"
+                  defaultValue={String(
+                    Array.isArray(item?.reminders) && item.reminders.length
+                      ? item.reminders[0]
+                      : "",
+                  )}
                 >
-                  <option value="local">
-                    {t("PersonalOS · local workspace")}
-                  </option>
-                  <option value="google">
-                    {t("Google Calendar · approval required")}{" "}
-                  </option>
+                  {eventReminders.map(([value, label]) => (
+                    <option key={value || "none"} value={value}>
+                      {t(label)}
+                    </option>
+                  ))}
                 </select>
               </label>
-              <div className="field-note">
-                <CalendarDays size={14} />{" "}
-                {t(
-                  "Scheduling conflicts are checked before the event is saved.",
-                )}{" "}
-              </div>
+              {item?.recurring && (
+                <div className="field-note">
+                  <Clock3 size={14} />{" "}
+                  {t(
+                    "This event repeats. Saving asks which occurrences to change.",
+                  )}{" "}
+                </div>
+              )}
             </>
           )}
           {kind === "automations" && (
@@ -3740,6 +4873,28 @@ function ResourceEditor({
                 </p>
               </div>
             </>
+          )}
+          {scopeChoice && (
+            <fieldset>
+              <legend>
+                {t("This event repeats. Choose which events to update.")}
+              </legend>
+              <div className="heading-actions">
+                {eventScopes.map(([scope, label]) => (
+                  <Button
+                    key={scope}
+                    type="button"
+                    variant={scope === "all" ? "ghost" : "secondary"}
+                    disabled={action.pending}
+                    onClick={() => {
+                      void save(scopeChoice, scope);
+                    }}
+                  >
+                    {t(label)}
+                  </Button>
+                ))}
+              </div>
+            </fieldset>
           )}
           <ErrorText text={action.error} />
           <div className="modal-actions">

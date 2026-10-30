@@ -45,8 +45,8 @@
 - [x] 真实独立Worker+DeepSeek验证：成功保留两条消息；重启后仍仅一个执行、attempts=1；交互续问返回原标记并保留四条消息。
 - [x] 独立负例账号以明确无效Key请求真实供应商，401后Worker失败，仅保留输入，不生成助手成功回复。
 - [x] 本地日历按可见42格时间窗完整分页：336条独立QA日程复现，225条窗内事件完整读取，浏览器与索引检查通过；见calendar-window报告。
-- [ ] 后续独立修复：Google列表读取忽略nextPageToken，可能漏显后续页和漏检查冲突；真实OAuth仍待配置。
-- [ ] 后续独立审计：OAuth完成/token刷新跨await与账户擦除的生命周期fence；目前为代码审阅风险，未完成并发复现。
+- [x] ~~后续独立修复：Google列表读取忽略nextPageToken~~ 作废：2026-10-31 用户决策整体移除 Google 日历，相关路径已删除。
+- [x] ~~后续独立审计：OAuth完成/token刷新跨await与账户擦除的生命周期fence~~ 作废：OAuth 路径随 Google 日历移除而删除。
 
 自动化历史修复PR #7原按heartbeat保持开放；2026-10-29用户明确要求后已核对CI并合并（93119dd）。其真实证据见 `docs/progress/2026-10-29-automation-history.md`。后续日历范围修复见 `docs/progress/2026-10-29-calendar-window.md`；完整外部验收门槛不变。
 
@@ -80,3 +80,13 @@
 - [ ] Hy/Jev授权数据面与真实模型工具选择/提取/简报质量继续按原条件保留，未重试暂停的模型网络检查。
 
 证据见 `docs/progress/2026-10-30-memory-recall-completeness.md`；远程CI/合并状态见当前PR。
+
+## 2026-10-31 苹果风本地日历（REQ-D 重定义）
+
+- [x] Google 日历按用户决策彻底移除：日历页/集成页 UI 与文案、6 个 `/calendar/oauth|google` 端点、Google 服务实现与 `google_*` 配置、compose 与 `.env.example` 的 `GOOGLE_*`、导出测试里的 `google_calendar` 夹具全部清理；保留 MCP 集成与通用断开审批路径。
+- [x] 多日历：records `kind="calendar"`，十色白名单、显隐/改名/改色/删除，默认「个人」日历不可删，非空日历删除需 `?move_to=`。迁移 0002 为每个 owner 补默认日历并回填既有事件的 `calendar_id`/`provider`，幂等（真实库两次执行零变更）。
+- [x] 月/周/日三视图 + 苹果风视觉：1px hairline、系统字体栈、红色当前时间线（假时钟 14:30 下自动滚到当前小时）、彩色事件条、胶囊分段控件、毛玻璃浮层；深色与 390px 均实测无横向溢出。
+- [x] 完整重复 + 例外：RFC5545 子集（FREQ/INTERVAL/COUNT/UNTIL/BYDAY）按事件时区墙钟展开，`scope=this|following|all` 对应 override/拆分/整体，`exdates` 表示删除单次；窗口内展开上限 500 实例/事件。
+- [x] 站内提醒：records `kind="notification"`，worker 每轮按 sha256 dedupe 生成，铃铛面板支持单条/全部已读。
+- [x] 验收：`ruff` 全绿、`pytest` 50 passed/1 skipped（与基线一致）、`tsc`/`eslint`/`next build` 通过、既有 E2E 1 passed 且零改动；浏览器 1440/390、浅/深色人工验收见 `docs/evidence/calendar-apple-*.png`。
+- [ ] 重复事件的冲突检查只覆盖基础事件行，未逐实例检测；月视图 `+N` 未做 >3 事件/日实测；提醒多档编辑未做 UI。证据见 `docs/progress/2026-10-31-apple-calendar.md`。

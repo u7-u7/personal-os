@@ -101,8 +101,6 @@ export const workspaceMessages: Record<string, string> = {
   "Session not found": "会话不存在或已删除",
   "Approval has already been resolved": "此审批已经处理",
   "Approval expired; request a new operation": "审批已过期，请重新发起操作",
-  "Connect Google Calendar through OAuth": "请通过 OAuth 授权连接 Google 日历",
-  "Google Calendar connection not found": "尚未连接 Google 日历",
   "Fill the Beijing workspace Embedding Base URL before saving its API key":
     "保存向量模型 API Key 前，请先填写北京工作空间的向量模型 Base URL",
   "Use the real Beijing workspace compatible-mode/v1 Base URL from Model Studio":

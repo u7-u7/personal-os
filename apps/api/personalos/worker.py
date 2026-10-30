@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from personalos.db import SessionLocal, utcnow
 from personalos.models import Automation, Execution, Record
+from personalos.services.notifications import materialize as materialize_notifications
 
 log = logging.getLogger("personalos.worker")
 RUN_TIMEOUT_SECONDS = 120
@@ -192,6 +193,8 @@ async def tick() -> bool:
     with SessionLocal() as db:
         recover_expired(db)
         schedule_due(db)
+        # Reminders become durable records before any long-running automation work.
+        materialize_notifications(db)
         claim = claim_next(db)
     if claim:
         await execute_claim(*claim)
