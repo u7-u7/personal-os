@@ -457,7 +457,7 @@ async def _finish_approval(db: Session, owner_id: str, row: Record):
     except Exception as exc:
         db.rollback()
         row = owned(db, Record, owner_id, item_id)
-        external_write = row.data.get("tool") in {"mcp.call"}
+        external_write = row.data.get("tool") in {"mcp.call", "code_hosting.write"}
         uncertain = isinstance(exc, (TimeoutError, httpx.TransportError)) or (external_write and isinstance(exc, HTTPException) and exc.status_code >= 500)
         row.status = "outcome_unknown" if uncertain else "failed"
         row.version += 1
