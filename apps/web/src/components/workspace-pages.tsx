@@ -54,6 +54,7 @@ import { Button } from "@/components/ui/button";
 import { useI18n, LanguageSelector } from "@/components/i18n-provider";
 import { EmbeddingSettings } from "@/components/embedding-settings";
 import { ChatSettings } from "@/components/chat-settings";
+import { MessageMarkdown } from "@/components/message-markdown";
 import {
   AISetupNotice,
   useAIConfiguration,
@@ -3054,18 +3055,23 @@ export function ChatPage() {
                       {message.role === "assistant" ? "PersonalOS" : t("You")}
                     </strong>
                     <div className="message-content">
-                      {message.content ||
-                        (pending ? (
-                          <span className="typing-dots">
-                            <i />
-                            <i />
-                            <i />
-                          </span>
+                      {message.content ? (
+                        message.role === "assistant" ? (
+                          <MessageMarkdown content={message.content} />
                         ) : (
-                          <span className="small-text">
-                            {t("No answer was generated.")}{" "}
-                          </span>
-                        ))}
+                          message.content
+                        )
+                      ) : pending ? (
+                        <span className="typing-dots">
+                          <i />
+                          <i />
+                          <i />
+                        </span>
+                      ) : (
+                        <span className="small-text">
+                          {t("No answer was generated.")}{" "}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </article>
