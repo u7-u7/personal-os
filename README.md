@@ -15,6 +15,8 @@ docker compose up --build -d
 
 Open [PersonalOS](http://localhost:3000/dashboard) and register an account. API reference: [interactive OpenAPI](http://localhost:8000/api/docs). PostgreSQL and Redis are private to the Compose network; the default Web/API ports bind to loopback. Use a TLS reverse proxy and set `APP_URL`, `WEB_ORIGIN`, `GOOGLE_REDIRECT_URI` and `COOKIE_SECURE=true` before public deployment. Set a strong database password and retain the generated encryption key securely: replacing it prevents decrypting existing credentials.
 
+`ENCRYPTION_KEY` must be a Fernet key — 32 random bytes encoded as 44 url-safe base64 characters, for example `python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. A plain 43-character `secrets.token_urlsafe(32)` value is not a Fernet key: the API stays healthy but refuses to save credentials with `503 ENCRYPTION_KEY is not a valid Fernet key`, so regenerate the key before saving API keys in Settings.
+
 `migrate` completes before API starts; Worker starts only after API health succeeds. Persistent volumes survive restarts. Do not run `docker compose down -v` unless you intend to destroy your database and Redis data. Back up PostgreSQL and the encryption key before upgrades; never blindly downgrade a live database.
 
 ## Local development
