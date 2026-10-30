@@ -27,6 +27,8 @@ from personalos.services.memory import MemoryService
 from personalos.services.accounts import account_lease, assert_account_writable
 from personalos.services.records import audit, create_record, list_records, query_tasks, serialize
 from personalos.services.tools import request_approval
+from personalos.services.browser import make_browser_tool
+from personalos.services.hosting import make_code_hosting_tool
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +157,9 @@ def make_tools(db: Session, owner_id: str, session_id: str, store):
         payload = AutomationInput(title=title, prompt=prompt, cron=cron, timezone=timezone)
         return json.dumps(serialize(create_automation(db, owner_id, payload)), default=str)
 
-    return [list_tasks, create_task, update_task, list_calendar_events, list_connected_tools, request_mcp_tool, propose_memory, recall_memories, create_calendar_event, generate_daily_briefing, schedule_automation]
+    return [list_tasks, create_task, update_task, list_calendar_events, list_connected_tools, request_mcp_tool,
+            propose_memory, recall_memories, create_calendar_event, generate_daily_briefing, schedule_automation,
+            make_code_hosting_tool(db, owner_id), make_browser_tool(db, owner_id)]
 
 
 def build_graph(db: Session, user: User, session_id: str, model: ChatOpenAI, saver, store, memories: list[dict]):
