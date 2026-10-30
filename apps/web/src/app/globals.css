@@ -2443,6 +2443,133 @@ small {
 .message-user .message-content {
   color: var(--muted);
 }
+.message-markdown {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.message-markdown > *:first-child {
+  margin-top: 0;
+}
+.message-markdown > *:last-child {
+  margin-bottom: 0;
+}
+.message-markdown p {
+  margin: 0 0 10px;
+  color: inherit;
+}
+.message-markdown strong {
+  display: inline;
+  margin: 0;
+  font-size: inherit;
+  font-weight: 600;
+}
+.message-markdown h1,
+.message-markdown h2,
+.message-markdown h3,
+.message-markdown h4,
+.message-markdown h5,
+.message-markdown h6 {
+  margin: 16px 0 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.7;
+}
+.message-markdown h1,
+.message-markdown h2 {
+  font-size: 14px;
+}
+.message-markdown ul,
+.message-markdown ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+.message-markdown ul {
+  list-style: disc;
+}
+.message-markdown ol {
+  list-style: decimal;
+}
+.message-markdown ul ul {
+  list-style: circle;
+}
+.message-markdown li {
+  margin: 3px 0;
+  line-height: 1.8;
+}
+.message-markdown li::marker {
+  color: var(--muted);
+}
+.message-markdown li > p {
+  margin: 0;
+}
+.message-markdown li > ul,
+.message-markdown li > ol {
+  margin: 3px 0 0;
+}
+.message-markdown code {
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--green-light);
+  font-size: 11px;
+}
+.message-markdown pre {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--green-light);
+  white-space: pre;
+}
+.message-markdown pre code {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.message-markdown blockquote {
+  margin: 0 0 10px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+}
+.message-markdown a {
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.message-markdown hr {
+  margin: 16px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.message-markdown img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+.message-markdown table {
+  display: block;
+  width: 100%;
+  margin: 0 0 12px;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.message-markdown th,
+.message-markdown td {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  text-align: left;
+  line-height: 1.7;
+}
+.message-markdown th {
+  background: var(--green-light);
+  font-weight: 600;
+}
+.message-markdown del {
+  color: var(--muted);
+}
 .chat-aside .panel-heading {
   padding: 4px 0 13px;
 }
