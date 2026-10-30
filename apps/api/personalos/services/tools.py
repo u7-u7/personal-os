@@ -1,7 +1,7 @@
 import asyncio
 import hashlib
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 from mcp import ClientSession
@@ -11,16 +11,72 @@ from sqlalchemy.orm import Session
 from personalos.config import get_settings
 from personalos.db import utcnow
 from personalos.models import Record
+from personalos.security import decrypt_config, encrypt_config
 from personalos.services.network import validate_public_url
 from personalos.services.accounts import account_lease, assert_account_writable
 from personalos.services.records import audit, owned
 
 
+def _expiry(value) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def mcp_headers(token: str | None) -> dict[str, str] | None:
+    return {"Authorization": f"Bearer {token}"} if token else None
+
+
+async def _refresh_tokens(db: Session, row: Record, tokens: dict) -> str | None:
+    client = row.data.get("oauth_client") or {}
+    client_id = client.get("client_id") or get_settings().oauth_client_id
+    client_secret = client.get("client_secret") or get_settings().oauth_client_secret
+    if not tokens.get("refresh_token") or not client_id:
+        return None
+    from personalos.services.oauth import OAuthError, discover, refresh
+    try:
+        discovery = await discover(row.data["url"])
+        renewed = await refresh(discovery, client_id=client_id,
+                                client_secret=client_secret or None, refresh_token=tokens["refresh_token"])
+    except (OAuthError, HTTPException, TimeoutError):
+        return None
+    merged = {**tokens, **{key: value for key, value in renewed.items() if value is not None}}
+    row.data = {**row.data, "encrypted_tokens": encrypt_config(merged)}
+    db.commit()
+    return merged.get("access_token")
+
+
+async def access_token(db: Session, row: Record) -> str | None:
+    """A usable bearer token for a trusted MCP connection, or None when none is stored.
+
+    An expiring token is refreshed once; a failed refresh reports no token instead of reusing
+    one the provider has already rejected.
+    """
+    blob = row.data.get("encrypted_tokens")
+    if not blob:
+        return None
+    try:
+        tokens = decrypt_config(blob)
+    except HTTPException:
+        return None
+    if not tokens.get("access_token"):
+        return None
+    expiry = _expiry(tokens.get("expires_at"))
+    if expiry is not None and expiry <= utcnow():
+        return await _refresh_tokens(db, row, tokens)
+    return tokens["access_token"]
+
+
 async def mcp_tools(db: Session, owner_id: str, integration_id: str) -> list[dict]:
     row = owned(db, Record, owner_id, integration_id)
     await require_mcp_trust(row)
+    headers = mcp_headers(await access_token(db, row))
     async with asyncio.timeout(30):
-        async with streamablehttp_client(row.data["url"]) as (read, write, _):
+        async with streamablehttp_client(row.data["url"], headers=headers) as (read, write, _):
             async with ClientSession(read, write) as client:
                 await client.initialize()
                 result = await client.list_tools()
@@ -42,8 +98,9 @@ async def mcp_call(db: Session, owner_id: str, integration_id: str, tool: str, a
     await require_mcp_trust(row)
     if tool not in row.data.get("permissions", []):
         raise HTTPException(403, "Tool permission has not been granted")
+    headers = mcp_headers(await access_token(db, row))
     async with asyncio.timeout(30):
-        async with streamablehttp_client(row.data["url"]) as (read, write, _):
+        async with streamablehttp_client(row.data["url"], headers=headers) as (read, write, _):
             async with ClientSession(read, write) as client:
                 await client.initialize()
                 result = await client.call_tool(tool, arguments)
