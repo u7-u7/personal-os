@@ -30,9 +30,6 @@ class Settings(BaseSettings):
     embedding_base_url: str = ""
     embedding_api_key: str = ""
     embedding_dimensions: EmbeddingDimensions = 1024
-    google_client_id: str = ""
-    google_client_secret: str = ""
-    google_redirect_uri: str = "http://localhost:3000/api/calendar/oauth/callback"
     mcp_allowed_hosts: str = ""
     hy_memory_enabled: bool = False
     typesafe_api_key: str = ""

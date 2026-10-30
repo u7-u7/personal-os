@@ -78,16 +78,9 @@ async def execute_approval(db: Session, owner_id: str, row: Record) -> dict:
 
 
 async def _execute_approval(db: Session, owner_id: str, row: Record) -> dict:
-    from personalos.services.calendar import disconnect_google, modify_google_event, write_google_event
     from personalos.services.memory import MemoryService
     from personalos.services.records import cas_update
     tool, args = row.data["tool"], row.data["arguments"]
-    if tool == "calendar.create_external":
-        return await write_google_event(db, owner_id, args)
-    if tool in {"calendar.update_external", "calendar.delete_external"}:
-        return await modify_google_event(db, owner_id, args, delete=tool == "calendar.delete_external")
-    if tool == "calendar.disconnect":
-        return await disconnect_google(db, owner_id, args["integration_id"])
     if tool == "account.delete":
         from personalos.services.privacy import delete_account
         return await delete_account(db, owner_id, row.id)

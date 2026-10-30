@@ -44,7 +44,53 @@ export interface RecordItem {
   role?: string;
   model?: string;
   payload?: Record<string, unknown>;
+  /** Event occurrences (`kind=event`); recurring instances keep the base id. */
+  calendar_id?: string;
+  all_day?: boolean;
+  location?: string;
+  rrule?: string | null;
+  reminders?: number[];
+  recurring?: boolean;
+  occurrence_start?: string;
+  recurrence_id?: string;
+  is_override?: boolean;
+  is_exception?: boolean;
 }
+/** Calendar palette whitelisted by the API; the value is the CSS colour keyword. */
+export type CalendarColor =
+  | "blue"
+  | "green"
+  | "orange"
+  | "red"
+  | "purple"
+  | "yellow"
+  | "pink"
+  | "teal"
+  | "brown"
+  | "gray";
+export interface CalendarItem {
+  id: string;
+  name: string;
+  color: CalendarColor;
+  position: number;
+  is_default: boolean;
+  visible: boolean;
+  version: number;
+}
+/** An event occurrence; recurring instances keep the base event id. */
+export type CalendarEvent = RecordItem;
+export interface NotificationItem {
+  id: string;
+  title: string;
+  body?: string;
+  event_id?: string;
+  occurrence_start?: string;
+  due_at?: string;
+  status?: string;
+  created_at?: string;
+}
+/** PATCH/DELETE scope for one occurrence of a recurring event. */
+export type EventScope = "this" | "following" | "all";
 export interface User {
   id: string;
   email: string;
@@ -70,7 +116,6 @@ export interface Settings {
   embedding_index_status?: string;
   memory_enabled?: boolean;
   timezone?: string;
-  google_calendar_connection?: { id: string; version: number } | null;
   [key: string]: unknown;
 }
 export interface ChatConnectionCheck {
