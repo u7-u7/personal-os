@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import timedelta

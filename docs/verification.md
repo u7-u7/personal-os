@@ -6,7 +6,7 @@ Content-free intent is persisted before business-tool commits, with UUID/session
 
 Fresh isolated PostgreSQL/HTTP/Graph/Worker acceptance covered committed tasks followed by injected failure, unchanged counts after409 retry/PATCH, safe retry200/stale409, handled tool errors despite a final QA response,205 newer failures hiding an old unknown, legacy records, concurrent200/409, owner/token fences and retained references. A child exited73 immediately after task commit; new-session lease recovery preserved unknown/paused/session and rejected the old token. Event65 was denied after64. Local deterministic model-stage fixtures are QA, with zero supplier calls.
 
-Existing backend **51 passed (6.34s)**, complete Web/API E2E **1 passed (18.5s)**, Ruff/diff passed. No new tests/tables/migrations/dependencies; temporary schemas removed. This prevents unsafe replay, without generic external exactly-once or automatic reconciliation closure. Matched API/Agent/Worker rollout is required. [New evidence and release limits](progress/2026-11-01-automation-effect-safety.md); exact-head CI/container receipts belong to the current PR.
+Existing backend **51 passed (6.76s)**, complete Web/API E2E **1 passed (18.6s)**, Ruff/diff passed. No new tests/tables/migrations/dependencies; temporary schemas removed. This prevents unsafe replay, without generic external exactly-once or automatic reconciliation closure. Matched API/Agent/Worker rollout is required. [New evidence and release limits](progress/2026-11-01-automation-effect-safety.md); exact-head CI/container receipts belong to the current PR.
 
 ## Complete lexical memory candidates · 2026-10-30
 

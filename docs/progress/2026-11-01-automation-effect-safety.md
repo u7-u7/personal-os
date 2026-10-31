@@ -27,11 +27,15 @@
 
 [本轮HTTP/Graph/Worker读回与源码Hash](../evidence/automation-effect-safety.json)、[进程退出/恢复](../evidence/automation-effect-crash.json)。首次手工Scheduler场景误选另一正常到期QA计划，命令失败；修正隔离选择后完整重新执行，不把失败运行计为通过，应用源码未因此改动。
 
-实际全历史查询使用既有ix_executions_owner_id，过滤后206行排序，0.392ms、11 shared hits、0 reads；未强制索引，无JOIN。仅本地小数据暖缓存观察，不是生产性能承诺。200批次和64事件限制客户端元数据，历史扫描/排序总成本仍随运行数增长。
+实际全历史查询使用既有ix_executions_owner_id，过滤后206行排序，0.320ms、11 shared hits、0 reads；未强制索引，无JOIN。仅本地小数据暖缓存观察，不是生产性能承诺。200批次和64事件限制客户端元数据，历史扫描/排序总成本仍随运行数增长。
 
-现有后端 **51 passed（6.34s）**、完整真实Web/API E2E **1 passed（18.5s）**，Ruff/diff通过。未新增或修改测试用例、表、迁移或依赖；只读复审无阻塞P1/P2。浏览器流程证明现有UI/API无回归，不替代故障证据或真实模型验收。远程CI/镜像/Compose结果记录在本轮PR，不预填。
+现有后端 **51 passed（6.76s）**、完整真实Web/API E2E **1 passed（18.6s）**，Ruff/diff通过。未新增或修改测试用例、表、迁移或依赖；只读复审无阻塞P1/P2。浏览器流程证明现有UI/API无回归，不替代故障证据或真实模型验收。远程CI/镜像/Compose结果记录在本轮PR，不预填。
 
 ## 发布与剩余边界
+
+发布前发现远程main已到fe1981d（本地日历/提醒、原生代码托管/浏览器工具、MCP OAuth），已整合并保留全部上游改动；worker导入冲突保留双方，恢复本轮简报需要的uuid导入。上表PG/HTTP/Graph、exit73/64事件证据已在整合后的源码重新执行；现有51项、E2E、Ruff、Web类型检查/lint重新通过。86c8941旧基线检查不冒充整合后证据。代码托管/浏览器复合工具默认视为可能写；其只读子动作失败也可能保守要求对账，尚未做子动作级安全证明。
+
+开发运行升级前确认无running执行，停止旧API/Worker，实际生成本机0600数据库备份，核对已有迁移头0002并成功执行upgrade head，再以同一整合源码启动API/Worker，健康检查通过。本轮没有新增数据库迁移，备份及凭据不提交GitHub。
 
 运行中执行数为0后，同批停止旧API/Worker，再以同一源码启动；开发API健康。镜像同样必须同一不可变构建：新Worker搭旧Agent会错误保留none，旧API仍可绕过守卫，因此禁止混用。
 

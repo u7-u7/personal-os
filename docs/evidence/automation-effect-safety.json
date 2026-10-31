@@ -1,5 +1,5 @@
 {
-  "accepted_at": "2026-10-31T18:28:23.791284+00:00",
+  "accepted_at": "2026-10-31T18:39:04.658133+00:00",
   "fixture": "temporary real PostgreSQL; real LangGraph tools/HTTP/Worker; explicitly deterministic local model-stage fixture, zero provider calls",
   "cases": {
     "partial_failure": {
@@ -61,8 +61,8 @@
         "Total Cost": 8.18,
         "Plan Rows": 1,
         "Plan Width": 212,
-        "Actual Startup Time": 0.347,
-        "Actual Total Time": 0.36,
+        "Actual Startup Time": 0.284,
+        "Actual Total Time": 0.294,
         "Actual Rows": 206,
         "Actual Loops": 1,
         "Sort Key": [
@@ -96,13 +96,13 @@
             "Total Cost": 8.16,
             "Plan Rows": 1,
             "Plan Width": 212,
-            "Actual Startup Time": 0.011,
-            "Actual Total Time": 0.29,
+            "Actual Startup Time": 0.01,
+            "Actual Total Time": 0.237,
             "Actual Rows": 206,
             "Actual Loops": 1,
-            "Index Cond": "((owner_id)::text = '8ff91dd3-1e99-4bda-b123-149bf5acd364'::text)",
+            "Index Cond": "((owner_id)::text = 'e7f2edf0-4bf4-4432-a3ce-71c121d89672'::text)",
             "Rows Removed by Index Recheck": 0,
-            "Filter": "((deleted_at IS NULL) AND ((automation_id)::text = '7c642382-98ed-48c9-9dc4-93316fb88156'::text))",
+            "Filter": "((deleted_at IS NULL) AND ((automation_id)::text = '9bf8f87e-5778-4645-9282-824612dece78'::text))",
             "Rows Removed by Filter": 8,
             "Shared Hit Blocks": 11,
             "Shared Read Blocks": 0,
@@ -129,16 +129,16 @@
         "Temp Read Blocks": 0,
         "Temp Written Blocks": 0
       },
-      "Planning Time": 0.055,
+      "Planning Time": 0.047,
       "Triggers": [],
-      "Execution Time": 0.392
+      "Execution Time": 0.32
     }
   ],
   "source_sha256": {
-    "apps/api/personalos/worker.py": "37f9cf58328b08c73cb5b8b2aa8342c6d8586c20ef409262bc9d01df96b03b16",
-    "apps/api/personalos/services/agent.py": "9e5b434780ce30f027cd73ab937b4f714bf66f8f83e15f00566664e9f68ebeee",
+    "apps/api/personalos/worker.py": "ba06be57b0f1665db56b53e02020511b26dc8127c713b8ae6c4e285a5dfc2ed7",
+    "apps/api/personalos/services/agent.py": "96e9f11c4675f313e877f7a3f21bf70c83a3482c8d09be1c5fd6b28b2f5e7b4f",
     "apps/api/personalos/services/execution_safety.py": "8b9179e249625932e5c67b357f63b4607725dc159d6f2999da6997229b16191e",
-    "apps/api/personalos/main.py": "5fd004d3ded9bf331720334fa3926986940a6cb93509e29e9b51b9b3733e8cb2",
+    "apps/api/personalos/main.py": "75c09a905a9fc72b1579244112684190561be4d14343d0f41d68d6f75a4937b6",
     "apps/api/personalos/services/automations.py": "cea834aa7863a6d2b3a0a801965a9348b34b6b7ef7c886a129e2cefbc142f8c9"
   },
   "cleanup": "temporary schema dropped in finally"
