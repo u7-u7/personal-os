@@ -21,15 +21,16 @@
 | 完成写且流程成功 | succeeded；/retry409，不重新执行成功动作 |
 | 全历史/兼容 | 205条新安全failed后旧unknown仍409；legacy failed也409；Scheduler暂停目标，不建立新occurrence |
 | 正常控制/并发 | 原queued恢复200；父锁冲突409；两个同版本重试200/409，拒绝后释放锁 |
+| 已领取后的对账暂停 | 已claimed兄弟在旧unknown存在时被启动前检查挡住，模型fixture调用0、任务新增0；只有普通手工pause且无旧风险的已claimed运行仍按既有契约继续 |
 | 范围/对账 | 错owner/旧token409；后续错误保留原产物引用 |
 | 真实进程退出 | 专用子进程在Graph create_task提交后立即exit73；任务1条、intent possible；新Session租约恢复unknown/paused/session，旧token后续写409 |
 | 容量边界 | 64条事件后第65条intent409，不清旧记录继续执行 |
 
 [本轮HTTP/Graph/Worker读回与源码Hash](../evidence/automation-effect-safety.json)、[进程退出/恢复](../evidence/automation-effect-crash.json)。首次手工Scheduler场景误选另一正常到期QA计划，命令失败；修正隔离选择后完整重新执行，不把失败运行计为通过，应用源码未因此改动。
 
-实际全历史查询使用既有ix_executions_owner_id，过滤后206行排序，0.320ms、11 shared hits、0 reads；未强制索引，无JOIN。仅本地小数据暖缓存观察，不是生产性能承诺。200批次和64事件限制客户端元数据，历史扫描/排序总成本仍随运行数增长。
+实际全历史查询计划保存在源码Hash对应的JSON中，使用既有索引、无JOIN、未强制planner。本地小数据暖缓存观察不是生产性能承诺；200批次和64事件限制客户端元数据，历史扫描/排序总成本仍随运行数增长。
 
-现有后端 **51 passed（6.76s）**、完整真实Web/API E2E **1 passed（18.6s）**，Ruff/diff通过。未新增或修改测试用例、表、迁移或依赖；只读复审无阻塞P1/P2。浏览器流程证明现有UI/API无回归，不替代故障证据或真实模型验收。远程CI/镜像/Compose结果记录在本轮PR，不预填。
+整合后的真实Web/API E2E **1 passed（18.6s）**；随后追加已claimed兄弟启动前检查，最终现有后端 **51 passed（5.51s）**，Ruff/diff通过。未新增或修改测试用例、表、迁移或依赖；只读复审无阻塞P1/P2。浏览器流程证明UI/API无回归，不替代故障证据或真实模型验收。最终提交的远程CI/镜像/Compose结果记录在本轮PR，不预填。
 
 ## 发布与剩余边界
 

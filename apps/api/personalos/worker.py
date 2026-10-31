@@ -218,6 +218,9 @@ async def execute_claim(run_id: str, token: str) -> None:
     try:
         with execution_scope(owner_id, run_id, token), SessionLocal() as action_db:
             initialize_execution(action_db, owner_id)
+            # A sibling may have become unknown after this occurrence was
+            # claimed. Recheck before starting any model or business action.
+            assert_replay_safe(action_db, owner_id, automation.id, allow_inflight=True)
             action = generate_briefing(action_db, owner_id) if handler == "briefing" else run_automation(action_db, owner_id, prompt)
             result = await asyncio.wait_for(action, timeout=RUN_TIMEOUT_SECONDS)
     except TimeoutError:

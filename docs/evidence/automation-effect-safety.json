@@ -1,5 +1,5 @@
 {
-  "accepted_at": "2026-10-31T18:39:04.658133+00:00",
+  "accepted_at": "2026-10-31T18:45:44.052774+00:00",
   "fixture": "temporary real PostgreSQL; real LangGraph tools/HTTP/Worker; explicitly deterministic local model-stage fixture, zero provider calls",
   "cases": {
     "partial_failure": {
@@ -49,6 +49,15 @@
       "wrong_owner": 409,
       "stale_token": 409,
       "refs_retained_after_error": true
+    },
+    "claimed_before_reconciliation_pause": {
+      "model_fixture_calls": 0,
+      "new_tasks": 0,
+      "status": "failed",
+      "old_unknown_retained": true
+    },
+    "manual_pause_already_claimed": {
+      "status": "succeeded"
     }
   },
   "query_plan": [
@@ -61,8 +70,8 @@
         "Total Cost": 8.18,
         "Plan Rows": 1,
         "Plan Width": 212,
-        "Actual Startup Time": 0.284,
-        "Actual Total Time": 0.294,
+        "Actual Startup Time": 0.291,
+        "Actual Total Time": 0.302,
         "Actual Rows": 206,
         "Actual Loops": 1,
         "Sort Key": [
@@ -72,7 +81,7 @@
         "Sort Method": "quicksort",
         "Sort Space Used": 52,
         "Sort Space Type": "Memory",
-        "Shared Hit Blocks": 11,
+        "Shared Hit Blocks": 13,
         "Shared Read Blocks": 0,
         "Shared Dirtied Blocks": 0,
         "Shared Written Blocks": 0,
@@ -97,14 +106,14 @@
             "Plan Rows": 1,
             "Plan Width": 212,
             "Actual Startup Time": 0.01,
-            "Actual Total Time": 0.237,
+            "Actual Total Time": 0.245,
             "Actual Rows": 206,
             "Actual Loops": 1,
-            "Index Cond": "((owner_id)::text = 'e7f2edf0-4bf4-4432-a3ce-71c121d89672'::text)",
+            "Index Cond": "((owner_id)::text = '65c4a98a-f39b-4a05-9dc5-00c66d6b879f'::text)",
             "Rows Removed by Index Recheck": 0,
-            "Filter": "((deleted_at IS NULL) AND ((automation_id)::text = '9bf8f87e-5778-4645-9282-824612dece78'::text))",
-            "Rows Removed by Filter": 8,
-            "Shared Hit Blocks": 11,
+            "Filter": "((deleted_at IS NULL) AND ((automation_id)::text = 'f93e39e8-8a2b-4c6f-b0f4-aa80605a9c2d'::text))",
+            "Rows Removed by Filter": 11,
+            "Shared Hit Blocks": 13,
             "Shared Read Blocks": 0,
             "Shared Dirtied Blocks": 0,
             "Shared Written Blocks": 0,
@@ -129,13 +138,13 @@
         "Temp Read Blocks": 0,
         "Temp Written Blocks": 0
       },
-      "Planning Time": 0.047,
+      "Planning Time": 0.045,
       "Triggers": [],
-      "Execution Time": 0.32
+      "Execution Time": 0.327
     }
   ],
   "source_sha256": {
-    "apps/api/personalos/worker.py": "ba06be57b0f1665db56b53e02020511b26dc8127c713b8ae6c4e285a5dfc2ed7",
+    "apps/api/personalos/worker.py": "b12770286bafa62839aba1c2eb9a8d623849d64e806928fcb470640929d57f23",
     "apps/api/personalos/services/agent.py": "96e9f11c4675f313e877f7a3f21bf70c83a3482c8d09be1c5fd6b28b2f5e7b4f",
     "apps/api/personalos/services/execution_safety.py": "8b9179e249625932e5c67b357f63b4607725dc159d6f2999da6997229b16191e",
     "apps/api/personalos/main.py": "75c09a905a9fc72b1579244112684190561be4d14343d0f41d68d6f75a4937b6",
