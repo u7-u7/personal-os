@@ -8,7 +8,7 @@ dependencies = [
   "psycopg[binary,pool]>=3.2,<4", "alembic>=1.15,<2", "pydantic-settings>=2.8,<3",
   "pwdlib[argon2]>=0.2,<1", "cryptography>=44,<47", "httpx>=0.28,<1",
   "langgraph>=1.0,<2", "langgraph-checkpoint-postgres>=3.0,<4", "langchain-openai>=1.0,<2",
-  "redis>=6,<8", "croniter>=6,<7", "mcp>=1.20,<2", "email-validator>=2.2,<3", "openai>=2,<4"
+  "redis>=6,<8", "croniter>=6,<7", "python-dateutil>=2.9,<4", "mcp>=1.20,<2", "email-validator>=2.2,<3", "openai>=2,<4"
 ]
 [project.optional-dependencies]
 integrations = ["hy-memory==2.0.7", "typesafe-sdk==0.7.5"]

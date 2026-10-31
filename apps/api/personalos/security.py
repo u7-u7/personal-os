@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import secrets
 from datetime import timedelta
 
@@ -13,25 +14,41 @@ from personalos.config import get_settings
 from personalos.db import get_db, utcnow
 from personalos.models import AuthSession, User
 
+logger = logging.getLogger(__name__)
+
 password_hasher = PasswordHash.recommended()
 COOKIE_NAME = "personalos_session"
 
 
-def encrypt_config(data: dict) -> str:
-    key = get_settings().encryption_key
+def fernet() -> Fernet:
+    """Build the cipher for stored credentials, refusing a misconfigured key.
+
+    A Fernet key is exactly 32 random bytes encoded as 44 url-safe base64
+    characters. A plain ``secrets.token_urlsafe(32)`` value is 43 characters
+    and must be rejected here: letting the constructor raise would surface as an
+    opaque 500 on every settings save instead of an actionable setup error.
+    """
+    key = get_settings().encryption_key.strip()
     if not key:
-        raise HTTPException(503, "Set ENCRYPTION_KEY on the server before storing credentials")
-    return Fernet(key.encode()).encrypt(json.dumps(data).encode()).decode()
+        raise HTTPException(503, "Server encryption is unavailable: set ENCRYPTION_KEY before storing credentials")
+    try:
+        return Fernet(key.encode())
+    except (ValueError, TypeError) as exc:
+        logger.error("invalid_encryption_key length=%s", len(key))
+        raise HTTPException(503, "ENCRYPTION_KEY is not a valid Fernet key. Set it to 32 random bytes "
+                                 "encoded as url-safe base64, then restart the API") from exc
+
+
+def encrypt_config(data: dict) -> str:
+    return fernet().encrypt(json.dumps(data).encode()).decode()
 
 
 def decrypt_config(value: str | None) -> dict:
     if not value:
         return {}
-    key = get_settings().encryption_key
-    if not key:
-        raise HTTPException(503, "Server encryption is unavailable")
+    cipher = fernet()
     try:
-        return json.loads(Fernet(key.encode()).decrypt(value.encode()))
+        return json.loads(cipher.decrypt(value.encode()))
     except (ValueError, InvalidToken) as exc:
         raise HTTPException(503, "Stored credentials cannot be decrypted") from exc
 

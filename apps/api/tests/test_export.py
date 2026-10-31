@@ -31,8 +31,8 @@ def test_export_has_no_record_or_automation_cap_and_excludes_foreign_data_and_cr
             {"owner_id": owner["id"], "kind": "oauth_state", "title": "OAUTH_STATE_MUST_NOT_EXPORT"},
         ])
         connection.execute(insert(Record), [{
-            "owner_id": owner["id"], "kind": "integration", "title": "Export fixture calendar",
-            "data": {"kind": "google_calendar", "trusted": True},
+            "owner_id": owner["id"], "kind": "integration", "title": "Export fixture integration",
+            "data": {"kind": "mcp", "trusted": True},
             "extra": {"encrypted_tokens": "ENCRYPTED_OAUTH_CREDENTIAL_MUST_NOT_EXPORT"},
         }])
         connection.execute(insert(Record), [{"id": session_id, "owner_id": owner["id"], "kind": "chat_session", "title": "Export history"}])

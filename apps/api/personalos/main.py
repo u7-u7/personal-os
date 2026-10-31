@@ -2,16 +2,18 @@
 import hashlib
 import json
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -19,20 +21,23 @@ from sqlalchemy.orm import Session
 from personalos.config import get_settings
 from personalos.db import get_db, utcnow
 from personalos.models import AuthSession, Automation, Execution, Message, Record, User
-from personalos.schemas import (ApprovalInput, ResumeApprovalInput, AutomationInput, ChatInput, Credentials, EventInput,
-                               ChatDiagnosticsInput, EmbeddingDiagnosticsInput, IntegrationInput, MemoryInput, SettingsInput, TaskInput)
+from personalos.schemas import (ApprovalInput, ResumeApprovalInput, AutomationInput, CalendarCreateInput, CalendarPatchInput,
+                               ChatInput, Credentials, EventInput, ChatDiagnosticsInput, EmbeddingDiagnosticsInput,
+                               IntegrationInput, MemoryInput, SettingsInput, TaskInput)
 from personalos.security import (COOKIE_NAME, current_user, decrypt_config, encrypt_config,
                                 new_session, password_hasher)
 from personalos.services.agent import durable_graph_resources, generate_briefing, initialize_graph_storage, model_config, stream_agent
 from personalos.services.automations import create_automation, list_automations, list_automation_runs, lock_automation, validate_reschedule
 from personalos.services.execution_safety import assert_replay_safe
 from personalos.services.accounts import account_lease, assert_account_writable
-from personalos.services.calendar import ensure_google_no_conflict, get_google_event, google_connection, list_google_events, oauth_complete, oauth_start
+from personalos.services import notifications as reminders
+from personalos.services.calendar import (calendar_view, create_calendar, create_event, delete_calendar, delete_event,
+                                          list_calendars, list_event_views, update_calendar, update_event)
 from personalos.services.memory import MemoryService
 from personalos.services.memory_deletion import approval_views, RECOVERABLE
 from personalos.services.network import validate_public_url
-from personalos.services.records import (audit, cas_update, create_record, ensure_no_conflict,
-                                        list_events, list_records, owned, patch_record, query_tasks, serialize)
+from personalos.services.records import (audit, cas_update, create_record, list_records, owned, patch_record,
+                                         query_tasks, serialize)
 from personalos.services.tools import execute_approval, mcp_tools, request_approval
 
 logger = logging.getLogger(__name__)
@@ -47,12 +52,20 @@ DB = Annotated[Session, Depends(get_db)]
 Viewer = Annotated[User, Depends(current_user)]
 
 
+def allowed_origins() -> set[str]:
+    # Operators reach the same UI as localhost and 127.0.0.1; the configured
+    # origin list keeps both reachable without relaxing the guard for others.
+    settings = get_settings()
+    listed = ",".join((settings.web_origin, settings.app_url))
+    return {item.strip().rstrip("/") for item in listed.split(",") if item.strip()}
+
+
 @app.middleware("http")
 async def origin_guard(request: Request, call_next):
     # Browser mutations must originate from our UI; server/CLI clients without Origin still authenticate.
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
         origin = request.headers.get("origin")
-        if origin and origin.rstrip("/") not in {get_settings().web_origin.rstrip("/"), get_settings().app_url.rstrip("/")}:
+        if origin and origin.rstrip("/") not in allowed_origins():
             return Response(content='{"detail":"Cross-origin mutation refused"}', status_code=403, media_type="application/json")
     return await call_next(request)
 
@@ -178,9 +191,6 @@ def delete_request(db, user, item_id, version, kind):
     if row.version != version:
         raise HTTPException(409, "Item changed. Refresh before requesting deletion")
     tool = "memory.delete" if kind == "memory" else "record.delete"
-    if kind == "integration" and row.data.get("kind") == "google_calendar":
-        approval = request_approval(db, user.id, "calendar.disconnect", {"integration_id": item_id}, "Revoke Google Calendar authorization")
-        return {"approval_required": True, "approval": serialize(approval)}
     approval = request_approval(db, user.id, tool, {"id": item_id, "version": version}, f"Delete {kind}: {row.title or row.id}")
     return {"approval_required": True, "approval": serialize(approval)}
 
@@ -246,54 +256,66 @@ def delete_memory(item_id: str, user: Viewer, db: DB, version: int = Query(..., 
     return delete_request(db, user, item_id, version, "memory")
 
 
+@app.get("/api/calendars")
+def calendars(user: Viewer, db: DB):
+    return {"items": [calendar_view(row) for row in list_calendars(db, user.id)]}
+
+
+@app.post("/api/calendars", status_code=201)
+def add_calendar(payload: CalendarCreateInput, user: Viewer, db: DB):
+    return calendar_view(create_calendar(db, user.id, payload))
+
+
+@app.patch("/api/calendars/{calendar_id}")
+def patch_calendar(calendar_id: str, payload: CalendarPatchInput, user: Viewer, db: DB):
+    return calendar_view(update_calendar(db, user.id, calendar_id, payload))
+
+
+@app.delete("/api/calendars/{calendar_id}", status_code=202)
+def remove_calendar(calendar_id: str, user: Viewer, db: DB, move_to: str | None = Query(None, max_length=36)):
+    return delete_calendar(db, user.id, calendar_id, move_to=move_to)
+
+
 @app.get("/api/events")
-def events(user: Viewer, db: DB, limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0),
-           start: datetime | None = Query(None), end: datetime | None = Query(None)):
-    return [serialize(r) for r in list_events(db, user.id, limit, offset, start=start, end=end)]
+def events(user: Viewer, db: DB, limit: int | None = Query(None, ge=1, le=500), offset: int = Query(0, ge=0),
+           start: datetime | None = Query(None), end: datetime | None = Query(None),
+           timezone: str | None = Query(None, max_length=100)):
+    return list_event_views(db, user.id, start=start, end=end, timezone=timezone, limit=limit, offset=offset)
 
 
 @app.post("/api/events", status_code=201)
-async def add_event(payload: EventInput, user: Viewer, db: DB):
-    ensure_no_conflict(db, user.id, payload.start_at, payload.end_at)
-    if payload.provider == "google":
-        await ensure_google_no_conflict(db, user.id, payload.start_at.isoformat(), payload.end_at.isoformat())
-        import uuid
-        args = payload.model_dump(mode="json")
-        args["external_id"] = uuid.uuid4().hex
-        row = request_approval(db, user.id, "calendar.create_external", args, f"Create Google event: {payload.title}")
-        return {"approval_required": True, "approval": serialize(row)}
-    return serialize(create_record(db, user.id, "event", payload.model_dump()))
+def add_event(payload: EventInput, user: Viewer, db: DB):
+    return create_event(db, user.id, payload)
 
 
 @app.patch("/api/events/{item_id}")
-def update_event(item_id: str, user: Viewer, db: DB, payload: dict = Body(...)):
-    row = owned(db, Record, user.id, item_id)
-    values = EventInput.model_validate({**serialize(row), **payload})
-    if values.provider == "google":
-        raise HTTPException(409, "External event modification requires a provider event ID and an approval")
-    ensure_no_conflict(db, user.id, values.start_at, values.end_at, item_id)
-    return serialize(patch_record(db, user.id, "event", item_id, require_version(payload), values.model_dump()))
+def patch_event(item_id: str, user: Viewer, db: DB, payload: dict = Body(...),
+                scope: Literal["this", "following", "all"] = Query("all"),
+                occurrence_start: datetime | None = Query(None)):
+    return update_event(db, user.id, item_id, payload, scope=scope, occurrence_start=occurrence_start)
 
 
 @app.delete("/api/events/{item_id}", status_code=202)
-def delete_event(item_id: str, user: Viewer, db: DB, version: int = Query(..., ge=1)):
-    return delete_request(db, user, item_id, version, "event")
+def remove_event(item_id: str, user: Viewer, db: DB, scope: Literal["this", "following", "all"] = Query("all"),
+                 occurrence_start: datetime | None = Query(None), version: int | None = Query(None, ge=1)):
+    return delete_event(db, user.id, item_id, scope=scope, occurrence_start=occurrence_start, version=version)
 
 
-@app.get("/api/calendar/oauth/start")
-def calendar_start(user: Viewer, db: DB):
-    return {"authorization_url": oauth_start(db, user.id)}
+@app.get("/api/notifications")
+def notifications(user: Viewer, db: DB, status: Literal["unread", "read"] | None = Query(None),
+                  limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0)):
+    rows, unread = reminders.list_notifications(db, user.id, status, limit, offset)
+    return {"items": [reminders.notification_view(row) for row in rows], "unread": unread}
 
 
-@app.get("/api/calendar/oauth/callback")
-async def calendar_callback(user: Viewer, db: DB, state: str, code: str):
-    await oauth_complete(db, user.id, state, code)
-    return RedirectResponse(get_settings().app_url + "/integrations?calendar=connected", status_code=303)
+@app.post("/api/notifications/read-all", status_code=202)
+def read_all_notifications(user: Viewer, db: DB):
+    return {"read": reminders.mark_all_read(db, user.id)}
 
 
-@app.get("/api/calendar/google/events")
-async def google_events(user: Viewer, db: DB, start: str, end: str):
-    return await list_google_events(db, user.id, start, end)
+@app.post("/api/notifications/{notification_id}/read", status_code=202)
+def read_notification(notification_id: str, user: Viewer, db: DB):
+    return {"read": reminders.mark_read(db, user.id, notification_id)}
 
 
 @app.get("/api/automations")
@@ -347,14 +369,14 @@ def integrations(user: Viewer, db: DB):
 
 def safe_integration(row):
     item = serialize(row)
-    item["extra"] = {key: val for key, val in item.get("extra", {}).items() if key != "encrypted_tokens"}
+    item["extra"] = {key: val for key, val in (item.get("extra") or {}).items() if key != "encrypted_tokens"}
+    # serialize() flattens the data column, so the issued token envelope also lands at the top level.
+    item.pop("encrypted_tokens", None)
     return item
 
 
 @app.post("/api/integrations", status_code=201)
 async def add_integration(payload: IntegrationInput, user: Viewer, db: DB):
-    if payload.kind == "google_calendar":
-        raise HTTPException(409, "Connect Google Calendar through OAuth")
     allowed = {host.strip() for host in get_settings().mcp_allowed_hosts.split(",") if host.strip()}
     await validate_public_url(payload.url, allowed)
     values = payload.model_dump()
@@ -398,6 +420,185 @@ def call_tool(item_id: str, user: Viewer, db: DB, payload: dict = Body(...)):
     return {"approval_required": True, "approval": serialize(approval)}
 
 
+class OAuthStartInput(BaseModel):
+    """Optional scope override; an empty list means the read-only default."""
+
+    scope: list[str] | None = Field(default=None, max_length=50)
+
+    @field_validator("scope")
+    @classmethod
+    def trim_scope(cls, value):
+        if value is None:
+            return None
+        scopes = [item.strip() for item in value if item.strip()]
+        if any(len(item) > 120 for item in scopes):
+            raise ValueError("OAuth scopes must be at most 120 characters")
+        return scopes or None
+
+
+# A connection must never gain write access implicitly: the default request is read-only.
+READ_ONLY_OAUTH_SCOPES = ("read:user", "public_repo")
+OAUTH_STATE_MINUTES = 10
+OAUTH_TOKEN_KEYS = ("access_token", "token_type", "refresh_token", "expires_at", "scope")
+
+
+def oauth_scope(scopes_supported: list[str], requested: list[str] | None) -> list[str]:
+    """Explicit scopes win; otherwise only the read-only scopes the provider actually offers.
+
+    An empty result sends no scope parameter, leaving the provider to apply its own minimal
+    default. A provider that offers nothing read-only must not fall through to its first scope,
+    because that is how a connection would silently gain write access.
+    """
+    if requested:
+        return requested
+    supported = {item for item in scopes_supported if item}
+    return [item for item in READ_ONLY_OAUTH_SCOPES if item in supported]
+
+
+def oauth_browser_redirect(**params: str) -> RedirectResponse:
+    """Return the browser to the web settings page with short status codes and nothing else."""
+    response = RedirectResponse(url=f"{get_settings().app_url.rstrip('/')}/settings?{urlencode(params)}",
+                                status_code=302)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def oauth_state_matches(stored: object, provided: str) -> bool:
+    """Constant-time compare; a value we never issued cannot match."""
+    return (isinstance(stored, str) and len(stored) == len(provided) and stored.isascii()
+            and provided.isascii() and secrets.compare_digest(stored, provided))
+
+
+def pending_oauth_state(db: Session, state: str) -> Record | None:
+    """The one unexpired pending authorization whose state matches.
+
+    The provider redirect carries no session cookie, so the ten-minute pending window bounds
+    this read; an expired or spent row can never be claimed again.
+    """
+    if not state or not state.isascii():
+        return None
+    rows = db.scalars(select(Record).where(Record.kind == "oauth_state", Record.status == "pending",
+                       Record.due_at > utcnow(), Record.deleted_at.is_(None))).all()
+    return next((row for row in rows if oauth_state_matches(row.data.get("state"), state)), None)
+
+
+def claim_oauth_state(db: Session, row: Record) -> bool:
+    """Spend the state once: the claiming statement drops the encrypted verifier payload."""
+    data = {key: value for key, value in row.data.items() if key != "encrypted"}
+    result = db.execute(update(Record).where(Record.id == row.id, Record.kind == "oauth_state",
+                         Record.status == "pending", Record.version == row.version,
+                         Record.due_at > utcnow())
+                         .values(status="used", version=row.version + 1, updated_at=utcnow(), data=data))
+    if result.rowcount != 1:
+        db.rollback()
+        return False
+    db.commit()
+    return True
+
+
+def store_oauth_tokens(db: Session, owner_id: str, integration: Record, tokens: dict,
+                       scopes: list[str]) -> None:
+    """Encrypt the token set onto the integration and audit the granted scope only."""
+    stored = {key: tokens.get(key) for key in OAUTH_TOKEN_KEYS}
+    integration.data = {**integration.data, "encrypted_tokens": encrypt_config(stored)}
+    integration.version += 1
+    integration.updated_at = utcnow()
+    audit(db, owner_id, "oauth.linked", integration.id, {"scope": stored["scope"] or " ".join(scopes)})
+    db.commit()
+
+
+def oauth_failure_reason(exc: Exception) -> str:
+    """Short reason code for the redirect; tokens, verifiers and remote text stay out of it."""
+    from personalos.services.oauth import OAuthError
+
+    if isinstance(exc, OAuthError):
+        return "provider_failed"
+    if isinstance(exc, HTTPException):
+        return "storage"
+    if isinstance(exc, (TimeoutError, httpx.TransportError)):
+        return "network"
+    return "failed"
+
+
+@app.post("/api/integrations/{item_id}/oauth/start")
+async def start_oauth(item_id: str, user: Viewer, db: DB, payload: OAuthStartInput | None = None):
+    from personalos.services.oauth import (OAuthError, authorization_url, discover, new_pkce, new_state,
+                                           register_client)
+
+    row = owned(db, Record, user.id, item_id)
+    if row.kind != "integration" or row.data.get("kind") != "mcp":
+        raise HTTPException(404, "MCP connection not found")
+    if row.data.get("trusted") is not True:
+        raise HTTPException(403, "Explicitly trust this MCP connection before authorizing it")
+    if not row.data.get("url"):
+        raise HTTPException(409, "MCP connection has no server URL to authorize")
+    assert_account_writable(db, user.id)
+    settings = get_settings()
+    redirect_uri = settings.oauth_callback_url
+    try:
+        discovery = await discover(row.data["url"])
+        if settings.oauth_client_id:
+            client_id, client_secret = settings.oauth_client_id, settings.oauth_client_secret or None
+        else:
+            registered = await register_client(discovery, redirect_uri=redirect_uri)
+            client_id, client_secret = registered["client_id"], registered.get("client_secret")
+        scopes = oauth_scope(discovery.scopes_supported, payload.scope if payload else None)
+    except OAuthError as exc:
+        if exc.error == "dcr_unsupported":
+            raise HTTPException(409, "This provider cannot register itself dynamically. Register an OAuth "
+                                     "app and set OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET") from exc
+        logger.warning("oauth_start_failed integration_id=%s error_code=%s", item_id, exc.error)
+        raise HTTPException(502, f"OAuth metadata discovery failed ({exc.error})") from exc
+    state = new_state()
+    verifier, challenge = new_pkce()
+    authorization = authorization_url(discovery, client_id=client_id, redirect_uri=redirect_uri, scope=scopes,
+                                      state=state, challenge=challenge)
+    # The verifier and the client secret exist at rest only inside this ciphertext.
+    pending = encrypt_config({"verifier": verifier, "scopes": scopes, "client_id": client_id,
+                              "client_secret": client_secret})
+    db.add(Record(owner_id=user.id, kind="oauth_state", status="pending",
+                  title=f"Authorize {row.title or 'MCP connection'}"[:500],
+                  due_at=utcnow() + timedelta(minutes=OAUTH_STATE_MINUTES),
+                  data={"integration_id": item_id, "state": state, "encrypted": pending,
+                        "redirect_uri": redirect_uri, "created_at": utcnow().isoformat()}))
+    db.commit()
+    return {"authorization_url": authorization, "state": state, "scope": scopes}
+
+
+@app.get("/api/oauth/callback")
+async def oauth_callback(db: DB, code: str = Query(default=""), state: str = Query(default=""),
+                         error: str = Query(default="")):
+    from personalos.services.oauth import discover, exchange_code
+
+    pending = pending_oauth_state(db, state)
+    if pending is None:
+        return oauth_browser_redirect(oauth="invalid_state")
+    owner_id, data = pending.owner_id, dict(pending.data)
+    if not claim_oauth_state(db, pending):
+        return oauth_browser_redirect(oauth="invalid_state")
+    try:
+        if error or not code:
+            return oauth_browser_redirect(oauth="failed", reason="denied")
+        payload = decrypt_config(data.get("encrypted"))
+        integration = db.scalar(select(Record).where(Record.id == data.get("integration_id"),
+                                Record.owner_id == owner_id, Record.kind == "integration",
+                                Record.deleted_at.is_(None)))
+        linked = integration.data if integration is not None else {}
+        if integration is None or linked.get("trusted") is not True or not linked.get("url"):
+            return oauth_browser_redirect(oauth="failed", reason="revoked")
+        discovery = await discover(linked["url"])
+        tokens = await exchange_code(discovery, client_id=payload["client_id"],
+                                    client_secret=payload.get("client_secret"), code=code,
+                                    redirect_uri=data.get("redirect_uri") or "", verifier=payload["verifier"])
+        store_oauth_tokens(db, owner_id, integration, tokens, payload.get("scopes") or [])
+    except Exception as exc:
+        db.rollback()
+        reason = oauth_failure_reason(exc)
+        logger.warning("oauth_callback_failed reason=%s error_type=%s", reason, type(exc).__name__)
+        return oauth_browser_redirect(oauth="failed", reason=reason)
+    return oauth_browser_redirect(oauth="ok")
+
+
 @app.get("/api/approvals")
 def approvals(user: Viewer, db: DB, limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0)):
     rows = list(db.scalars(select(Record).where(Record.owner_id == user.id, Record.kind == "approval",
@@ -438,7 +639,7 @@ async def _finish_approval(db: Session, owner_id: str, row: Record):
     except Exception as exc:
         db.rollback()
         row = owned(db, Record, owner_id, item_id)
-        external_write = row.data.get("tool") in {"calendar.create_external", "calendar.update_external", "calendar.delete_external", "mcp.call", "calendar.disconnect"}
+        external_write = row.data.get("tool") in {"mcp.call", "code_hosting.write"}
         uncertain = isinstance(exc, (TimeoutError, httpx.TransportError)) or (external_write and isinstance(exc, HTTPException) and exc.status_code >= 500)
         row.status = "outcome_unknown" if uncertain else "failed"
         row.version += 1
@@ -511,7 +712,6 @@ def settings(user: Viewer, db: DB):
     config = get_settings()
     chat = ChatConfiguration.for_user(user)
     embedding = EmbeddingConfiguration.for_user(user)
-    connection = google_connection(db, user.id)
     return {**chat.public_settings(), **embedding.public_settings(),
             "ai_setup_complete": chat.configured and embedding.configured,
             "missing_configuration_fields": {"chat": chat.missing_fields,
@@ -519,8 +719,6 @@ def settings(user: Viewer, db: DB):
             "name": user.name, "email": user.email,
             "memory_enabled": user.preferences.get("memory_enabled", True), "theme": user.preferences.get("theme", "system"),
             "timezone": user.preferences.get("timezone", "Asia/Shanghai"), "version": user.version,
-            "google_oauth_configured": bool(config.google_client_id and config.google_client_secret),
-            "google_calendar_connection": {"id": connection.id, "version": connection.version} if connection else None,
             "hy_memory_configured": False, "hy_memory_status": "awaiting_authorization", "jev_configured": bool(config.typesafe_api_key),
             "fast_model": user.preferences.get("fast_model", ""), "reasoning_model": user.preferences.get("reasoning_model", ""),
             "decision_provider": user.preferences.get("decision_provider", config.decision_provider)}
@@ -689,7 +887,7 @@ async def add_briefing(user: Viewer, db: DB):
 def dashboard(user: Viewer, db: DB):
     tasks = [serialize(r) for r in query_tasks(db, user.id, 5, open_only=True)]
     start = utcnow()
-    events = [serialize(r) for r in list_events(db, user.id, 4, start=start, end=start + timedelta(days=7))]
+    events = list_event_views(db, user.id, start=start, end=start + timedelta(days=7), limit=4)
     memories = [serialize(r) for r in list_records(db, user.id, "memory")]
     automation_rows = [serialize(row) for row in list_automations(db, user.id)]
     approval_rows = approvals(user, db, 100, 0)
@@ -758,34 +956,13 @@ async def chat(payload: ChatInput, user: Viewer, db: DB):
     return StreamingResponse(leased_events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Session-ID": session_id})
 
 
-@app.patch("/api/calendar/google/events/{event_id}", status_code=202)
-async def update_google_event(event_id: str, payload: EventInput, user: Viewer, db: DB):
-    current = await get_google_event(db, user.id, event_id)
-    await ensure_google_no_conflict(db, user.id, payload.start_at.isoformat(), payload.end_at.isoformat(), event_id)
-    args = {**payload.model_dump(mode="json"), "external_id": event_id, "etag": current["etag"]}
-    approval = request_approval(db, user.id, "calendar.update_external", args, f"Modify Google event: {payload.title}")
-    return {"approval_required": True, "approval": serialize(approval)}
-
-
-@app.delete("/api/calendar/google/events/{event_id}", status_code=202)
-async def delete_google_event(event_id: str, user: Viewer, db: DB):
-    current = await get_google_event(db, user.id, event_id)
-    approval = request_approval(db, user.id, "calendar.delete_external", {"external_id": event_id, "etag": current["etag"]},
-                                f"Delete Google event: {current.get('summary', event_id)}")
-    return {"approval_required": True, "approval": serialize(approval)}
-
-
-@app.post("/api/calendar/google/events/{event_id}/undo", status_code=202)
-async def undo_google_event(event_id: str, user: Viewer, db: DB):
-    return await delete_google_event(event_id, user, db)
-
-
 @app.post("/api/integrations/{item_id}/disconnect", status_code=202)
 def request_disconnect(item_id: str, user: Viewer, db: DB):
     row = owned(db, Record, user.id, item_id)
-    if row.kind != "integration" or row.data.get("kind") != "google_calendar":
-        raise HTTPException(404, "Google Calendar connection not found")
-    approval = request_approval(db, user.id, "calendar.disconnect", {"integration_id": item_id}, "Revoke Google Calendar authorization")
+    if row.kind != "integration" or row.data.get("kind") != "mcp":
+        raise HTTPException(404, "MCP connection not found")
+    approval = request_approval(db, user.id, "record.delete", {"id": item_id, "version": row.version},
+                                f"Disconnect MCP: {row.title or row.id}")
     return {"approval_required": True, "approval": serialize(approval)}
 
 

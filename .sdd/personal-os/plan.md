@@ -4,7 +4,7 @@
 |---|---|---|---|
 | PLAN-01 | D1 基础架构 | PRD、设计、目录、认证、数据库迁移、Web shell、Compose | 空目录扫描完成；API health/注册和 DB 可运行 |
 | PLAN-02 | D2 Agent 与记忆 | 流式聊天、LangGraph/checkpoint/store、MemoryService、Hy SDK 核查 | PLAN-01；真实模型/记忆 provider 有授权后验收 |
-| PLAN-03 | D3 日常工作 | 任务、自带日历、可选日历 OAuth、简报 | PLAN-01；真实本地业务读写、冲突与隔离验证；Google按用户选择暂不接入 |
+| PLAN-03 | D3 日常工作 | 任务、自带日历（苹果风三视图/多日历/重复例外/站内提醒）、简报 | PLAN-01；真实本地业务读写、冲突与隔离验证；Google 日历已于 2026-10-31 按用户决策连同后端一并移除 |
 | PLAN-04 | D4 自动化 | Worker、周期调度、MCP、DecisionProvider | PLAN-02/03；重启恢复与重复 claim 验证 |
 | PLAN-05 | D5 安全隐私 | 审批、审计、加密配置、导出/删除 | 横跨 PLAN-02/04；越权与敏感动作验证 |
 | PLAN-06 | D6 联调稳定性 | Pytest、Playwright、Docker/CI、故障恢复 | 前述模块；完整测试报告不隐瞒跳过 |

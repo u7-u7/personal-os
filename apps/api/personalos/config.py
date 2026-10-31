@@ -30,10 +30,11 @@ class Settings(BaseSettings):
     embedding_base_url: str = ""
     embedding_api_key: str = ""
     embedding_dimensions: EmbeddingDimensions = 1024
-    google_client_id: str = ""
-    google_client_secret: str = ""
-    google_redirect_uri: str = "http://localhost:3000/api/calendar/oauth/callback"
     mcp_allowed_hosts: str = ""
+    api_url: str = "http://127.0.0.1:8000"
+    oauth_client_id: str = ""
+    oauth_client_secret: str = ""
+    oauth_redirect_uri: str = ""
     hy_memory_enabled: bool = False
     typesafe_api_key: str = ""
     decision_provider: str = "rules"
@@ -49,6 +50,12 @@ class Settings(BaseSettings):
             except ValueError as exc:
                 raise ValueError("Embedding dimensions must be a supported integer") from exc
         return value
+
+    @property
+    def oauth_callback_url(self) -> str:
+        # A provider without dynamic client registration (GitHub) only accepts the
+        # callback registered on its OAuth app, so it is derived from the public API URL.
+        return self.oauth_redirect_uri.strip() or f"{self.api_url.rstrip('/')}/api/oauth/callback"
 
     @model_validator(mode="after")
     def supported_embedding_dimensions(self):

@@ -2,7 +2,6 @@
 import asyncio
 import json
 import logging
-import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import timedelta
@@ -22,12 +21,15 @@ from personalos.config import get_settings
 from personalos.db import utcnow
 from personalos.integrations.decision import JevDecisionProvider, LLMDecisionProvider, RuleDecisionProvider
 from personalos.models import Message, Record, User
+from personalos.services.calendar import create_event, list_event_views
 from personalos.services.model import ChatConfiguration, chat_model_parameters
 from personalos.services.memory import MemoryService
 from personalos.services.execution_safety import effect_started, effect_finished, link_session
 from personalos.services.accounts import account_lease, assert_account_writable
-from personalos.services.records import audit, create_record, ensure_no_conflict, list_events, list_records, query_tasks, serialize
+from personalos.services.records import audit, create_record, list_records, query_tasks, serialize
 from personalos.services.tools import request_approval
+from personalos.services.browser import make_browser_tool
+from personalos.services.hosting import make_code_hosting_tool
 
 logger = logging.getLogger(__name__)
 
@@ -93,17 +95,12 @@ def make_tools(db: Session, owner_id: str, session_id: str, store):
 
     @tool
     async def list_calendar_events() -> str:
-        """Read local upcoming events and connected Google Calendar events for the next seven days."""
-        from personalos.services.calendar import list_google_events
+        """Read local calendar events and their recurring instances for the next seven days."""
         start = utcnow()
         end = start + timedelta(days=7)
         # Bound by occurrence time, not creation order, so older plans remain
         # visible even after many unrelated events have been added.
-        events = [serialize(r) for r in list_events(db, owner_id, None, start=start, end=end)]
-        connected = [r for r in list_records(db, owner_id, "integration") if r.data.get("kind") == "google_calendar" and r.status == "connected"]
-        if connected:
-            events.extend(await list_google_events(db, owner_id, start.isoformat(), end.isoformat()))
-        return json.dumps(events, default=str, ensure_ascii=False)
+        return json.dumps(list_event_views(db, owner_id, start=start, end=end), default=str, ensure_ascii=False)
 
     @tool
     async def list_connected_tools() -> str:
@@ -141,18 +138,11 @@ def make_tools(db: Session, owner_id: str, session_id: str, store):
         return json.dumps(await memory.recall(query), ensure_ascii=False)
 
     @tool
-    async def create_calendar_event(title: str, start_at: str, end_at: str, provider: str = "local") -> str:
-        """Create a local calendar event or request human approval for a Google Calendar write."""
+    async def create_calendar_event(title: str, start_at: str, end_at: str) -> str:
+        """Create a local calendar event. Both timestamps are ISO datetimes with a timezone."""
         from personalos.schemas import EventInput
-        payload = EventInput(title=title, start_at=start_at, end_at=end_at, provider=provider)
-        ensure_no_conflict(db, owner_id, payload.start_at, payload.end_at)
-        if provider == "google":
-            args = payload.model_dump(mode="json")
-            args["external_id"] = uuid.uuid4().hex
-            row = request_approval(db, owner_id, "calendar.create_external", args, f"Create Google event: {title}")
-            return json.dumps({"approval_required": True, "approval_id": row.id})
-        row = create_record(db, owner_id, "event", payload.model_dump())
-        return json.dumps(serialize(row), default=str)
+        payload = EventInput(title=title, start_at=start_at, end_at=end_at)
+        return json.dumps(create_event(db, owner_id, payload), default=str)
 
     @tool
     async def generate_daily_briefing() -> str:
@@ -168,7 +158,9 @@ def make_tools(db: Session, owner_id: str, session_id: str, store):
         payload = AutomationInput(title=title, prompt=prompt, cron=cron, timezone=timezone)
         return json.dumps(serialize(create_automation(db, owner_id, payload)), default=str)
 
-    return [list_tasks, create_task, update_task, list_calendar_events, list_connected_tools, request_mcp_tool, propose_memory, recall_memories, create_calendar_event, generate_daily_briefing, schedule_automation]
+    return [list_tasks, create_task, update_task, list_calendar_events, list_connected_tools, request_mcp_tool,
+            propose_memory, recall_memories, create_calendar_event, generate_daily_briefing, schedule_automation,
+            make_code_hosting_tool(db, owner_id), make_browser_tool(db, owner_id)]
 
 
 def build_graph(db: Session, user: User, session_id: str, model: ChatOpenAI, saver, store, memories: list[dict]):
@@ -325,14 +317,9 @@ async def _generate_briefing(db: Session, owner_id: str) -> dict:
     user = db.get(User, owner_id)
     config = model_config(user)
     tasks = [serialize(r) for r in query_tasks(db, owner_id, None, open_only=True)]
-    from personalos.services.calendar import list_google_events
     start = utcnow()
     end = start + timedelta(days=1)
-    events = [serialize(r) for r in list_events(db, owner_id, None, start=start, end=end)]
-    connected = [r for r in list_records(db, owner_id, "integration") if r.data.get("kind") == "google_calendar" and r.status == "connected"]
-    if connected:
-        google_events = await list_google_events(db, owner_id, start.isoformat(), end.isoformat())
-        events.extend({"id": item["id"], "title": item.get("summary", ""), "start": item.get("start"), "end": item.get("end"), "provider": "google"} for item in google_events)
+    events = list_event_views(db, owner_id, start=start, end=end)
     memories = await MemoryService(db, owner_id).recall("daily goals preferences", 20)
     async with chat_model_parameters(config) as prepared:
         model = ChatOpenAI(**prepared)
