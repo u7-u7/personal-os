@@ -1,5 +1,13 @@
 # PersonalOS verification report
 
+## Automation effect-aware replay safety · 2026-11-01
+
+Content-free intent is persisted before business-tool commits, with UUID/session references retained. Partial or uncertain effects become outcome_unknown; only a failed execution with an explicit no-business-effect proof may retry. All live history is checked, legacy failed records fail closed, PATCH cannot bypass checks, and unknown outcomes pause active recurring schedules. Normal queued resume/metadata edits remain available.
+
+Fresh isolated PostgreSQL/HTTP/Graph/Worker acceptance covered committed tasks followed by injected failure, unchanged counts after409 retry/PATCH, safe retry200/stale409, handled tool errors despite a final QA response,205 newer failures hiding an old unknown, legacy records, concurrent200/409, owner/token fences and retained references. A child exited73 immediately after task commit; new-session lease recovery preserved unknown/paused/session and rejected the old token. Event65 was denied after64. Local deterministic model-stage fixtures are QA, with zero supplier calls.
+
+Existing backend **51 passed (6.34s)**, complete Web/API E2E **1 passed (18.5s)**, Ruff/diff passed. No new tests/tables/migrations/dependencies; temporary schemas removed. This prevents unsafe replay, without generic external exactly-once or automatic reconciliation closure. Matched API/Agent/Worker rollout is required. [New evidence and release limits](progress/2026-11-01-automation-effect-safety.md); exact-head CI/container receipts belong to the current PR.
+
 ## Complete lexical memory candidates · 2026-10-30
 
 The shared MemoryService no longer ranks only the latest500 canonical facts. Owner/confirmed/live filters precede streaming all eligible projections; bounded top-k preserves existing Python lexical matching, recent-first fallback and source, with stable ID ties. A real named PostgreSQL cursor fetches200 per batch; cancellation and a30s cooperative scan budget close the cursor and propagate failure without partial results. Account/deletion fences remain unchanged.

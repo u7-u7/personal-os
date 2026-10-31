@@ -24,7 +24,8 @@ from personalos.schemas import (ApprovalInput, ResumeApprovalInput, AutomationIn
 from personalos.security import (COOKIE_NAME, current_user, decrypt_config, encrypt_config,
                                 new_session, password_hasher)
 from personalos.services.agent import durable_graph_resources, generate_briefing, initialize_graph_storage, model_config, stream_agent
-from personalos.services.automations import create_automation, list_automations, list_automation_runs
+from personalos.services.automations import create_automation, list_automations, list_automation_runs, lock_automation, validate_reschedule
+from personalos.services.execution_safety import assert_replay_safe
 from personalos.services.accounts import account_lease, assert_account_writable
 from personalos.services.calendar import ensure_google_no_conflict, get_google_event, google_connection, list_google_events, oauth_complete, oauth_start
 from personalos.services.memory import MemoryService
@@ -307,12 +308,13 @@ def add_automation(payload: AutomationInput, user: Viewer, db: DB):
 
 @app.patch("/api/automations/{item_id}")
 def update_automation(item_id: str, user: Viewer, db: DB, payload: dict = Body(...)):
-    row = owned(db, Automation, user.id, item_id)
-    values = AutomationInput.model_validate({**serialize(row), **payload}).model_dump()
-    row = cas_update(db, Automation, user.id, item_id, require_version(payload), values)
-    audit(db, user.id, "automation.updated", item_id)
-    db.commit()
-    return serialize(row)
+    with lock_automation(db, user.id, item_id) as row:
+        values = AutomationInput.model_validate({**serialize(row), **payload}).model_dump()
+        validate_reschedule(db, user.id, row, values)
+        row = cas_update(db, Automation, user.id, item_id, require_version(payload), values)
+        audit(db, user.id, "automation.updated", item_id)
+        db.commit()
+        return serialize(row)
 
 
 @app.delete("/api/automations/{item_id}")
@@ -325,15 +327,12 @@ def cancel_automation(item_id: str, user: Viewer, db: DB, version: int = Query(.
 
 @app.post("/api/automations/{item_id}/retry")
 def retry_automation(item_id: str, user: Viewer, db: DB, payload: dict = Body(...)):
-    row = owned(db, Automation, user.id, item_id)
-    execution = db.scalar(select(Execution).where(Execution.owner_id == user.id, Execution.automation_id == item_id)
-                          .order_by(Execution.created_at.desc()).limit(1))
-    if execution and execution.status in {"outcome_unknown", "running", "queued", "pending"}:
-        raise HTTPException(409, "Reconcile the existing execution before requesting a retry")
-    row = cas_update(db, Automation, user.id, item_id, require_version(payload), {"status": "active", "next_run_at": utcnow()})
-    audit(db, user.id, "automation.retry_requested", item_id)
-    db.commit()
-    return serialize(row)
+    with lock_automation(db, user.id, item_id):
+        assert_replay_safe(db, user.id, item_id, retry=True)
+        row = cas_update(db, Automation, user.id, item_id, require_version(payload), {"status": "active", "next_run_at": utcnow()})
+        audit(db, user.id, "automation.retry_requested", item_id)
+        db.commit()
+        return serialize(row)
 
 
 @app.get("/api/automations/{item_id}/runs")

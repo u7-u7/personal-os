@@ -16,13 +16,27 @@ from zoneinfo import ZoneInfo
 from croniter import croniter
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
+from fastapi import HTTPException
 
 from personalos.db import SessionLocal, utcnow
 from personalos.models import Automation, Execution, Record
+from personalos.services.execution_safety import (
+    assert_replay_safe, effects_uncertain, execution_scope, initialize_execution, no_effects_proven,
+)
 
 log = logging.getLogger("personalos.worker")
 RUN_TIMEOUT_SECONDS = 120
 LEASE_SECONDS = 150
+
+
+def _pause_for_review(db: Session, owner_id: str, automation_id: str) -> None:
+    changed = db.execute(update(Automation).where(
+        Automation.id == automation_id, Automation.owner_id == owner_id,
+        Automation.deleted_at.is_(None), Automation.status == "active",
+    ).values(status="paused", updated_at=utcnow(), version=Automation.version + 1)).rowcount
+    if changed:
+        db.add(Record(owner_id=owner_id, kind="activity", title="Automation paused for reconciliation",
+                      status="blocked", data={"action": "automation.reconciliation_required", "automation_id": automation_id}))
 
 
 def as_utc(value: datetime) -> datetime:
@@ -45,6 +59,14 @@ def schedule_due(db: Session, now: datetime | None = None) -> str | None:
     )
     if automation is None:
         db.rollback()
+        return None
+    try:
+        assert_replay_safe(db, automation.owner_id, automation.id, allow_inflight=True)
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        _pause_for_review(db, automation.owner_id, automation.id)
+        db.commit()
         return None
     scheduled = as_utc(automation.next_run_at)
     run_key = f"{automation.id}:{scheduled.isoformat()}"
@@ -84,9 +106,13 @@ def recover_expired(db: Session, now: datetime | None = None) -> int:
     for run in expired:
         run.status = "outcome_unknown"
         run.error = "Worker lease expired. Review activity and external effects before retrying."
+        run.result = {**run.result, "reconciliation_required": True, "retry_safe": False}
+        if run.extra.get("session_id"):
+            run.result = {**run.result, "session_id": run.extra["session_id"]}
         run.claim_token = None
         run.lease_until = None
         run.version += 1
+        _pause_for_review(db, run.owner_id, run.automation_id)
     db.commit()
     return len(expired)
 
@@ -136,17 +162,36 @@ def claim_next(db: Session, now: datetime | None = None) -> tuple[str, str] | No
 
 
 def finish_run(db: Session, run_id: str, token: str, status: str, result: dict, error: str | None) -> bool:
+    run = db.scalar(select(Execution).where(
+        Execution.id == run_id, Execution.claim_token == token, Execution.status == "running",
+        Execution.deleted_at.is_(None),
+    ).execution_options(populate_existing=True))
+    if run is None:
+        db.rollback()
+        return False
+    # Read the committed intent after the action Session has closed. A final
+    # model response cannot turn an interrupted tool write into full success.
+    if ((status == "failed" and not no_effects_proven(run.extra))
+            or (status == "succeeded" and effects_uncertain(run.extra))):
+        status = "outcome_unknown"
+        error = "Execution may have committed effects. Review Activity before retrying."
+    result = {**result, "reconciliation_required": status == "outcome_unknown",
+              "retry_safe": status == "failed" and no_effects_proven(run.extra)}
+    if run.extra.get("session_id"):
+        result["session_id"] = run.extra["session_id"]
     # A reclaimed lease invalidates the old token; a late process cannot overwrite recovery.
     statement = (
         update(Execution)
         .where(Execution.id == run_id, Execution.claim_token == token, Execution.status == "running",
-               Execution.deleted_at.is_(None))
+               Execution.deleted_at.is_(None), Execution.version == run.version)
         .values(status=status, result=result, error=error, claim_token=None, lease_until=None,
                 updated_at=utcnow(), version=Execution.version + 1)
     )
     changed = db.execute(statement).rowcount == 1
     if changed:
         run = db.get(Execution, run_id)
+        if status == "outcome_unknown":
+            _pause_for_review(db, run.owner_id, run.automation_id)
         db.add(Record(owner_id=run.owner_id, kind="activity", title="Automation execution",
                       content=error or "Automation completed", status=status,
                       data={"execution_id": run_id, "automation_id": run.automation_id}))
@@ -170,11 +215,10 @@ async def execute_claim(run_id: str, token: str) -> None:
         owner_id = run.owner_id
     status, result, error = "succeeded", {}, None
     try:
-        with SessionLocal() as action_db:
+        with execution_scope(owner_id, run_id, token), SessionLocal() as action_db:
+            initialize_execution(action_db, owner_id)
             action = generate_briefing(action_db, owner_id) if handler == "briefing" else run_automation(action_db, owner_id, prompt)
-            result = await asyncio.wait_for(
-                action, timeout=RUN_TIMEOUT_SECONDS
-            )
+            result = await asyncio.wait_for(action, timeout=RUN_TIMEOUT_SECONDS)
     except TimeoutError:
         status, error = "outcome_unknown", "Execution timed out; review effects before retrying."
     except asyncio.CancelledError:
