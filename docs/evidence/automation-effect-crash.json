@@ -1,0 +1,15 @@
+{
+  "accepted_at": "2026-10-31T18:47:10.301877+00:00",
+  "integrated_main": "fe1981d830f1e4711fd6eb5a803b8bc3092f97e7",
+  "fixture": "dedicated child process, real Graph/create_task/PostgreSQL; deterministic QA tool plan, zero provider calls",
+  "actual_exit_code": 73,
+  "committed_tasks_before_recovery": 1,
+  "persisted_intent_after_exit": "possible",
+  "recovered_status": "outcome_unknown",
+  "parent_paused": true,
+  "session_preserved": true,
+  "late_effect_rejected": 409,
+  "event_limit": 64,
+  "65th_intent_rejected": 409,
+  "cleanup": "schema removed in finally"
+}

@@ -1,0 +1,11 @@
+{
+  "baseline_commit": "dd1e3a9dc2618d491408872837a791a32731bcc8",
+  "fixture": "real PostgreSQL and real internal create_task, failure-only stream fixture; no model/provider calls",
+  "first_execution_status": "failed",
+  "tasks_after_first_failure": 1,
+  "baseline_retry_accepted": true,
+  "tasks_after_retry_failure": 2,
+  "older_unknown_masked_retry_accepted": true,
+  "model_calls": 0,
+  "cleanup": "temporary schema dropped in finally"
+}
